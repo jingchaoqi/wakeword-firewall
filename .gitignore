@@ -1,0 +1,38 @@
+# ── 模型文件（p0/setup.sh 会自动下载，约 75MB）──────────────────
+p0/models/
+extension/models/
+*.onnx
+*.tar.bz2
+
+# ── 自编的 wasm 引擎产物（约 25MB，用 extension/vendor/build-wasm.sh 编）──
+extension/vendor/sherpa-onnx-wasm.js
+extension/vendor/sherpa-onnx-wasm.wasm
+extension/vendor/sherpa-onnx-wasm.data
+*.wasm
+
+# ── 测试音视频素材（含唤醒词的私人素材，不入库）────────────────
+extension/assets/
+extension/test/*.m4s
+extension/test/*.mpd
+*.mp4
+*.wav
+*.m4a
+*.webm
+
+# ── 扩展打包与签名 ─────────────────────────────────────────────
+*.pem
+*.crx
+*.zip
+/dist/
+
+# ── 语言环境 ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+package-lock.json
+
+# ── 杂项 ───────────────────────────────────────────────────────
+.DS_Store
+*.log

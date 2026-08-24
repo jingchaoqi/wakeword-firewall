@@ -1,0 +1,327 @@
+# 参与贡献
+
+先看 [README](README.md) 把它跑起来。这份文档讲的是「代码为什么长这样、
+现在缺什么、怎么改不会踩坑」。
+
+---
+
+## 目录
+
+- [项目现在在哪](#项目现在在哪)
+- [最需要帮忙的三件事](#最需要帮忙的三件事)
+- [先理解这个架构为什么长这样](#先理解这个架构为什么长这样)
+- [仓库结构](#仓库结构)
+- [开发环境](#开发环境)
+- [跑测试](#跑测试)
+- [两个已经踩过的坑](#两个已经踩过的坑)
+- [六个能卡住一整天的技术细节](#六个能卡住一整天的技术细节)
+- [待办清单](#待办清单)
+- [提 Issue 之前](#提-issue-之前)
+- [提 PR 的约定](#提-pr-的约定)
+
+---
+
+## 项目现在在哪
+
+**P0（离线验证）已完成**，结论是这个项目该做——算法侧的不确定性已经清零：
+模型认得出、认得准、跑得够快，变体盲区也找到了成本可接受的补法。
+
+剩下的风险全部集中在浏览器媒体栈的工程细节上，那些是可以一条条排查的已知问题。
+唯一的例外是 MSE-in-Workers，而它只需要三行代码就能证伪。
+
+| 阶段 | 状态 | 内容 |
+|---|---|---|
+| P0 | ✅ 完成 | 离线验证：召回 94.9%、误报 0 次/32 分钟、21x 实时，真实视频 9/9 |
+| P1 | 🚧 进行中 | 单站点预扫描 MVP，端到端链路已在真实 Chromium 里跑通 |
+| P2 | 待开始 | 去站点化 + 实时兜底 + 优雅降级 + 上架 |
+| P3 | 开放式 | 社区词库、更隐蔽的处理方式、Firefox 版 |
+
+## 最需要帮忙的三件事
+
+**一、往词表里补唤醒词变体 —— 门槛最低，价值最高。**
+
+P0 暴露的最大问题是：能唤醒真实设备的说法，比我们以为的多得多。测试视频里
+8 处唤醒词，检测模型只认出 3 处标准的「小爱同学」，「小菜同学」「小坏同学」
+「小被同学」一个没抓到——而真实音箱对这些大概率会响应。
+
+变体是长尾的、地域性的、会随梗变化的，中心化维护不现实，但众包很合适。
+格式和生成方法见 [README 的自定义唤醒词](README.md#自定义唤醒词)。
+**提 PR 时请说明你是在哪台设备上验证过这个变体真的能唤醒它的。**
+
+**二、在更大的真实素材集上复测误报率。**
+
+目前的「0 次 / 32 分钟」是在合成语料上测的。真实视频有背景音乐、多人说话、
+压缩失真。**误报是这类插件唯一会致死的问题**——用户被误伤两次就会卸载。
+
+```bash
+cd p0 && python3 scan.py 你的素材目录/ --json result.json
+```
+
+跑完把 `result.json` 和素材类型（评测/新闻/播客/游戏实况…）一起开个 issue。
+
+**三、把拼音模糊层移植进扩展。**
+
+`p0/fuzzy.py` 那层已经在 Python 侧验证过（变体视频 8/8 全中，且不误伤
+「小明同学」「小李同学」），但**还没移植进扩展**——扩展目前只有词表方案
+（实测 8 中 7）。这是 P2 的主要待办，需要一份中文拼音表和浏览器端 ASR。
+
+## 先理解这个架构为什么长这样
+
+**死结：检测必然滞后。** 实时 KWS 认出唤醒词时，声音已经播出去了。P0 实测：
+唤醒词在 0.64–1.24 秒，KWS 到 1.80 秒才报警，**滞后 0.56 秒**。
+
+如果坚持实时处理，唯一出路是让播放比检测慢一步——缓冲 300–1000 ms 再放出去。
+对播客可以，对视频不行：ITU 的音画同步可感知阈值在音频滞后约 45 ms 附近，
+300 ms 已经是明显的口型对不上，1 秒就不能看了。
+
+**解法：不要在播放链上检测，去读缓冲区。** 视频有个实时音频流没有的性质——
+它是提前下载好的。你现在看到的画面，播放器早在几十秒前就把对应音频段拿到手了，
+正躺在 `SourceBuffer` 里等着被播。
+
+把那份缓冲截下来、提前解码、提前跑一遍检测，就拿到了一张时间戳表。剩下的事
+只是播到那一刻把音量拉到 0，再拉回来。
+
+这带来三个附带好处，实测都已兑现：
+
+1. **零延迟、零音画不同步** —— 播放链上什么都没插，只有一条 gain 自动化曲线
+2. **可以用重得多的判断** —— 离线扫描的时间预算是实时的几十倍。变体检测那一层
+   就是靠这个预算才可能存在，实时路径根本跑不起全片 ASR
+3. **静音窗口可以算准** —— ASR 字级时间戳给出的精确区间是 1.20 秒；没有它就
+   只能用 1.9 秒的固定回退量，白白多切掉 0.7 秒
+
+**关于站点兼容性**，两条已经调研清楚的结论：
+
+- **YouTube 的 SABR 打不到这个方案**。SABR/UMP 改的是取数据的方式，不是喂给
+  解码器的格式——UMP 解包必须在页面 JS 里完成，解包结果必须是标准 fMP4/WebM
+  才能塞进 `SourceBuffer`。这个方案站在 yt-dlp 被打死的那道防线之后。
+- **B 站同样没问题**。点播已全面 DASH（fMP4/.m4s，音视频分离），FLV 已下线；
+  直播走 HLS-fMP4。三条路径最终都汇入 `appendBuffer`，一个 hook 通吃。
+
+## 仓库结构
+
+```
+extension/              Chrome MV3 扩展本体
+  manifest.json         两个 content_scripts：MAIN(hook) + ISOLATED(桥+UI)
+  keywords.txt          默认唤醒词表
+  src/
+    main-world.js       ★ 核心：hook appendBuffer + WebCodecs 解码 + GainNode 静音
+    mp4-demux.js        fMP4 解封装（moov/mdhd/esds、moof/tfdt/trun）
+    webm-demux.js       WebM 解封装（EBML，有状态，容忍分段边界劈开元素）
+    content.js          ISOLATED world 桥接 + 页面提示条
+    kws-worker.js       Worker 里跑 sherpa-onnx KWS
+    engine-loader.js    引擎加载：优先包内，其次用户自装
+    engine-store.js     引擎存储（chrome.storage.local + base64）
+    background.js       安装即开引导页；统计与徽标
+    popup.html/js       设置面板：总开关、静音时长、词表编辑
+    welcome.html/js     安装引导页（自动检测 / 拖拽装引擎 / 自检 / 站点探测）
+    node-shim.js        给 npm 版胶水补的 require("path") 垫片
+    ui.css
+  vendor/
+    sherpa-onnx-kws.js  KWS 的 JS 封装（来自 npm sherpa-onnx，纯 JS，与环境无关）
+    build-wasm.sh       编浏览器版 wasm 引擎的脚本
+  tools/
+    embed-engine.sh     把编好的引擎打进包（分发前跑这一次）
+    pack.sh             出 .zip（商店）+ .crx（企业策略）
+  test/                 Playwright 端到端测试
+
+p0/                     P0 阶段的研究工具链（Python）
+  wakeword.py           两级检测核心：KWS 找候选 + ASR 复核给精确时间戳
+  scan.py               扫描视频，输出命中时间戳和建议静音区间
+  mute.py               把视频处理成屏蔽后的版本（含近音变体检测）
+  fuzzy.py              ★ 拼音模糊匹配：抓「小菜同学」这类 KWS 认不出的变体
+  corpus.py gen.py      合成测试语料
+  tts.py tts2.py
+  eval.py sweep2.py     评测与诊断
+  breakdown.py
+  recall2.py diagnose.py
+  setup.sh              装依赖 + 下模型
+  keywords.txt
+
+build/                  出网受限环境下编 wasm 的辅助脚本
+```
+
+> `build/` 里那几个脚本是在**代理禁掉了 GitHub 的 `/archive/` 打包下载和整个
+> gitlab.com** 的环境里编成功用的：用 `git clone` 造等价 tarball（同 tag 同源码，
+> 只是取法不同）、改 CMake 的哈希校验，eigen 则从 PyPI 的 `cmeel-eigen` 取头文件
+> 加一个最小 CMakeLists 替代。**网络正常的环境用不到这些**，直接跑
+> `build-wasm.sh` 即可。留着是防止将来又遇到类似封锁。
+
+## 开发环境
+
+编引擎、装扩展的完整步骤见 [README 的安装教程](README.md#安装扩展完整教程)，
+这里只补开发相关的：
+
+改完 `extension/src/` 下的任何文件，去 `chrome://extensions` 点扩展卡片上的
+**刷新**图标，然后**刷新视频页**。`main-world.js` 是 `document_start` 注入的，
+不刷新页面不会重新跑。
+
+调试各层：
+
+| 想看哪一层 | 去哪看 |
+|---|---|
+| MAIN world 的 hook、解码、静音 | 视频页的 DevTools Console |
+| ISOLATED world 的桥接、提示条 | 同上（注意切 context） |
+| Worker 里的检测 | DevTools → Sources → Threads |
+| service worker、徽标 | `chrome://extensions` → 点「服务工作进程」 |
+
+## 跑测试
+
+`extension/test/` 是 Playwright 端到端测试。先造一段 MSE 测试素材——**需要一个
+含唤醒词的视频，仓库里没有**：
+
+```bash
+cd extension/test
+ffmpeg -i 你的视频.mp4 -vn -c:a libopus -f dash -seg_duration 2 \
+  -use_template 0 -use_timeline 0 -init_seg_name 'init.m4s' \
+  -media_seg_name 'seg-$Number$.m4s' dash.mpd
+python3 -m http.server 8848 &
+```
+
+然后：
+
+```bash
+node run.js             # 端到端：拦截 → 解码 → 检测 → 静音
+node selftest.js        # 分项检查每个环节
+node onboarding-test.js # 引导流程
+node bundled-test.js    # 引擎已内置时的引导页分支
+```
+
+`run.js` 里的 `executablePath` 目前是硬编码的 Chromium 路径，本地跑可能要改。
+
+## 两个已经踩过的坑
+
+**一、KWS 有变体盲区，而且调参救不了。**
+
+第二段测试视频里有 8 处唤醒词，KWS 只认出 3 处——全是标准的「小爱同学」。
+「小菜同学」「小坏同学」「小被同学」这些**足以唤醒真实设备**的近音变体一个没抓到。
+
+**放宽阈值不解决问题**：从 0.25 一路放到 0.02、加权从 2.0 提到 5.0，命中数只在
+3–4 之间漂移，而且抓到的还不是同一批。放宽阈值只是让模型在错误的方向上更激进，
+并不会让它突然理解「菜」和「爱」发音相近。
+
+解法是 `p0/fuzzy.py` 的拼音模糊匹配：转写 → 转拼音 → 按音节做带容错的比对。
+固定音节必须完全一致（xiao / tong / xue），可变音节只要韵母落在目标韵母的
+近邻集合里就算命中。
+
+| 候选 | 拼音 | 相似度 | 判定 |
+|---|---|---|---|
+| 小爱同学 | xiao ai tong xue | 1.000 | 屏蔽 |
+| 小菜/小蔡同学 | xiao cai tong xue | 0.963 | 屏蔽 |
+| 小坏同学 | xiao huai tong xue | 0.900 | 屏蔽 |
+| 小被同学 | xiao bei tong xue | 0.900 | 屏蔽 |
+| 小明同学 | xiao ming tong xue | 0.750 | 放行 |
+| 小李同学 | xiao li tong xue | 0.750 | 放行 |
+
+阈值 0.85 干净地把两类分开。
+
+两条路都能走，速度差 4 倍：词表方案 7/8、21x 实时，但变体要人工枚举；
+全片 ASR + 模糊匹配 8/8、4.7x 实时，能自动泛化到没见过的变体。
+**建议两层都上**——词表兜住常见变体（快、便宜、可社区订阅），模糊层兜住长尾。
+慢 4 倍无所谓：前瞻窗口是 10–60 秒，4.7x 实时意味着扫完 30 秒缓冲只要 6 秒。
+
+**二、合成语料可能是假的。**
+
+第一版用 aishell3 的 VITS 合成「小爱同学」，模型把它念成了「小艾同学」
+「小安同学」「小赖同学」——**35% 的样本连 ASR 都听不出唤醒词**。用这批数据
+测出来的召回率只有 42%，差点让人误判模型能力不行。换 TTS 并加上
+「ASR 确认发音正确才纳入统计」这道闸之后是 94.9%。
+
+**合成语料必须先验证它合成对了**，否则测的是 TTS 不是模型。这一条对任何
+语音任务的评测都成立。
+
+## 六个能卡住一整天的技术细节
+
+1. **必须用 `audioSB.buffered`，不能用 `video.buffered`。** 按 MSE 规范，后者是
+   所有 active SourceBuffer 缓冲区间的**交集**。音视频分离时视频轨字节大、
+   缓冲慢，会系统性低估实际拥有的音频前瞻。
+
+2. **WebCodecs 的 `description` 语义是反直觉的。** fMP4 里的裸 AAC **必须**给
+   `description`（AudioSpecificConfig），否则会被当成 ADTS 解析；而 Opus 恰恰
+   **不能**给。搞反了直接解不出声音。
+
+3. **`timestampOffset` 要跟着算。** `tfdt` 是 media timeline，实际呈现时间还要
+   叠加 `SourceBuffer.timestampOffset` 并受 `appendWindowStart/End` 裁剪。
+   这三个属性的 setter 也得 hook，否则算出的秒数和 `currentTime` 对不上。
+
+4. **扩展页里 `fetch` 不存在的资源是抛异常，不是返 404。** 可选文件（如 `.data`）
+   必须单独包 try，否则会把整个「引擎已内置」误判成没装。
+
+5. **两种 emscripten 胶水形态。** 官方构建是非 MODULARIZE（全局 `var Module` +
+   `onRuntimeInitialized`），npm 那份是 MODULARIZE（工厂函数返 Promise）。
+   前者**必须在胶水执行之前**配置好 `Module`，而且要用**间接 eval**
+   （`(0, eval)(glue)`）走全局作用域，否则 `var Module` 会变成局部变量。
+   `kws-worker.js` 里两种形态都已支持。
+
+6. **官方构建没把 `FS` 放进 `EXPORTED_RUNTIME_METHODS`。** 带 `.data` 的构建
+   不需要 FS（模型已由 `--preload-file` 预加载），别写死校验。
+
+> **注意 `extension/vendor/README.md` 有一段已经过时**：它说编完官方 wasm 之后
+> 要手动删掉 `kws-worker.js` 里 `FS.writeFile` 那几行。**现在不需要了**——
+> `kws-worker.js` 已经同时支持「`.data` 预加载」和「手动写入模型」两条路径，
+> 会根据传进来的东西自动选。
+
+## 待办清单
+
+### 高优先级
+
+- [ ] **跑站点探测**，确认 B 站 / YouTube 没中 MSE-in-Workers。这是唯一可能
+      推翻整个架构的未知数：
+
+      ```js
+      document.querySelector('video')?.src        // blob:… → 方案成立
+      document.querySelector('video')?.srcObject  // MediaSourceHandle → 抓不到
+      ```
+
+      扩展内置了探针（中招会弹提示、徽标变 `—`，不会静默失败），引导页第 3 步
+      能一键探测。**即便中招也有救**：在 MAIN world 覆盖 `window.Worker`，用
+      `importScripts` 把补丁前置注入 worker（Chromium 官方认可这是 dedicated
+      worker 的可行手段），但复杂度会明显上升。
+- [ ] **在更大的真实素材集上复测误报率**（见[上文](#最需要帮忙的三件事)）
+- [ ] **把 `p0/fuzzy.py` 的拼音模糊层移植进扩展**（见[上文](#最需要帮忙的三件事)）
+
+### 中优先级
+
+- [ ] 实时兜底路径（`chrome.tabCapture` + offscreen 文档），覆盖直播和预扫描
+      够不到的内容。
+      **注意**：在 content script 的 ISOLATED world 里建 `AudioContext` 会命中
+      Chromium 的已知缺陷（issue 40885587）导致音频被静音，官方解法就是放进
+      offscreen 文档
+- [ ] DRM / 杜比音轨 / worker-MSE 的检测与优雅降级（探针已有，降级逻辑还没写）
+- [ ] 去站点化：只要用 MSE 就能工作，不再针对单个播放器适配
+- [ ] 上架 Chrome 应用商店。**MV3 禁止远程托管代码，wasm 也算**，引擎必须内置。
+      首个版本建议只声明 `*://*.bilibili.com/*` 和 `*://*.youtube.com/*`，
+      审核阻力小得多。`tabCapture` 是敏感权限，但主线路径不需要它，可以做成
+      按需申请。全程本地推理、零网络请求是很强的辩护材料
+
+### 低优先级
+
+- [ ] 社区维护的唤醒词与变体库（类似 uBlock 的过滤规则订阅）——变体是长尾且
+      会随梗变化的，这可能是项目最有生命力的部分
+- [ ] 比全静音更隐蔽的处理：−15 dB + 频谱涂抹，保留可懂度、破坏声学特征。
+      需实测验证有效性，别放在第一版
+- [ ] Firefox 版本（没有 `tabCapture`，但 MSE 拦截主线路通）
+
+## 提 Issue 之前
+
+先确认不是[已知边界](README.md#做不到什么)——DRM、杜比音轨、WebRTC、
+浏览器之外、移动端，这些是结构性做不到的，不是 bug。
+
+报检测问题请附上：
+
+- 站点和视频链接（如果是公开的）
+- 徽标显示什么（数字 / `—` / 无）
+- 视频页控制台的完整输出
+- 如果能复现，最好跑一遍 `p0/scan.py` 看看 Python 侧认不认得出——
+  这能立刻区分「模型不行」和「浏览器侧管线有问题」
+
+## 提 PR 的约定
+
+- **代码风格跟着现有文件走**：中文注释，注释解释「为什么」而不是「做了什么」，
+  踩过的坑就地写清楚
+- **改检测逻辑必须附复测数据**。用 `p0/` 的工具跑，至少给出召回和误报两个数字，
+  说明测量条件。这个项目里「感觉更准了」不算证据
+- **加唤醒词变体请说明验证方式**：你在哪台设备上确认过它真的能唤醒
+- **别引入非商用许可的模型**。选型时排除 openWakeWord 的一个主要原因就是它的
+  预训练模型是 CC-BY-NC-SA。本项目及其依赖保持 Apache-2.0
+- **不要提交**：wasm 引擎二进制、模型文件、测试音视频素材、`.pem` 签名私钥。
+  这些都已经在 `.gitignore` 里
