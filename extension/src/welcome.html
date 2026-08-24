@@ -1,0 +1,132 @@
+<meta charset="utf-8">
+<title>唤醒词防火墙 · 安装引导</title>
+<style>
+:root{
+  --paper:#F1F0EC; --surface:#FAF9F7; --surface2:#E7E5DF;
+  --ink:#16181C; --ink2:#3D4149; --dim:#6C6F79; --line:#D6D3CB;
+  --sig:#1C6A66; --sig-soft:#DCEAE8; --warn:#9E4526; --warn-soft:#F2E2DA;
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#131518; --surface:#1B1E22; --surface2:#24282D;
+  --ink:#E9E7E2; --ink2:#C3C1BB; --dim:#8E9199; --line:#31353B;
+  --sig:#5CBDB5; --sig-soft:#16302F; --warn:#E28762; --warn-soft:#33211A;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink2);
+  font:15px/1.7 -apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+.wrap{max-width:720px;margin:0 auto;padding:48px 24px 80px}
+h1{font-size:26px;color:var(--ink);margin:0 0 6px;letter-spacing:-.01em}
+.lede{color:var(--dim);margin:0 0 32px}
+.step{background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  padding:20px 22px;margin:0 0 16px;position:relative}
+.step.done{border-color:var(--sig)}
+.step h2{font-size:16px;color:var(--ink);margin:0 0 4px;display:flex;
+  align-items:center;gap:10px}
+.badge{width:22px;height:22px;border-radius:50%;flex:none;display:grid;
+  place-items:center;font-size:11px;font-weight:700;
+  background:var(--surface2);color:var(--dim)}
+.step.done .badge{background:var(--sig);color:#fff}
+.step.fail .badge{background:var(--warn);color:#fff}
+.step p{margin:6px 0 0;font-size:14px}
+.muted{color:var(--dim);font-size:13px}
+code{font:12.5px ui-monospace,Menlo,monospace;background:var(--surface2);
+  padding:1.5px 5px;border-radius:3px;color:var(--ink)}
+pre{background:var(--surface2);border-radius:5px;padding:12px 14px;overflow-x:auto;
+  font:12px/1.6 ui-monospace,Menlo,monospace;color:var(--ink2);margin:10px 0}
+button{font:inherit;font-size:13px;font-weight:600;cursor:pointer;border-radius:5px;
+  border:1px solid var(--line);background:var(--surface2);color:var(--ink2);
+  padding:7px 14px}
+button.primary{background:var(--sig);border-color:var(--sig);color:#fff}
+button:disabled{opacity:.45;cursor:default}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+#drop{border:2px dashed var(--line);border-radius:6px;padding:26px 16px;
+  text-align:center;color:var(--dim);margin-top:12px;transition:.15s;font-size:14px}
+#drop.hot{border-color:var(--sig);background:var(--sig-soft);color:var(--sig)}
+.files{margin-top:10px;font-size:13px}
+.files div{display:flex;justify-content:space-between;padding:4px 0;
+  border-top:1px solid var(--line)}
+.ok{color:var(--sig);font-weight:600}
+.no{color:var(--warn);font-weight:600}
+.result{margin-top:12px;padding:12px 14px;border-radius:5px;font-size:14px;display:none}
+.result.show{display:block}
+.result.good{background:var(--sig-soft);color:var(--sig)}
+.result.bad{background:var(--warn-soft);color:var(--warn)}
+details{margin-top:10px}
+summary{cursor:pointer;color:var(--dim);font-size:13px}
+</style>
+
+<div class="wrap">
+<h1>唤醒词防火墙</h1>
+<p class="lede">还差一步就能用。下面每一步能自动完成的都会自动完成。</p>
+
+<div class="step" id="s1">
+  <h2><span class="badge">1</span>检测引擎</h2>
+  <p id="s1msg" class="muted">检查中…</p>
+
+  <div id="s1need" style="display:none">
+    <p>唤醒词检测靠一个 WebAssembly 引擎。<b>官方没有发布它的浏览器版</b>——
+      k2-fsa 只为语音识别、语音合成、静音检测发布了 wasm，唯独没有关键词检测。
+      npm 上那份是 Node 专用构建（<code>NODERAWFS</code>），浏览器里加载会直接报错。</p>
+    <p class="muted">所以需要你本地编一次，约 20–40 分钟，一次搞定。编好后把文件拖进来即可，
+      <b>不用重新打包扩展</b>。</p>
+
+    <div class="btns">
+      <button class="primary" id="copycmd">复制构建命令</button>
+      <button id="dlscript">下载构建脚本</button>
+    </div>
+
+    <details>
+      <summary>构建命令（点开看）</summary>
+<pre id="cmd">git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk &amp;&amp; ./emsdk install 4.0.23 &amp;&amp; ./emsdk activate 4.0.23
+source ./emsdk_env.sh &amp;&amp; cd ..
+
+git clone https://github.com/k2-fsa/sherpa-onnx.git
+cd sherpa-onnx/wasm/kws/assets
+P=sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01
+curl -L -o m.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/$P.tar.bz2
+tar xf m.tar.bz2 &amp;&amp; rm m.tar.bz2
+mv $P/encoder-epoch-12-avg-2-chunk-16-left-64.onnx ./
+mv $P/decoder-epoch-12-avg-2-chunk-16-left-64.onnx ./
+mv $P/joiner-epoch-12-avg-2-chunk-16-left-64.onnx ./
+mv $P/tokens.txt ./ &amp;&amp; rm -rf $P
+cd ../../.. &amp;&amp; ./build-wasm-simd-kws.sh
+
+# 产物在 build-wasm-simd-kws/install/bin/wasm/
+# 把 sherpa-onnx-wasm-kws-main.{js,wasm,data} 三个文件拖进引导页即可</pre>
+    </details>
+
+    <div id="drop">把 <code>sherpa-onnx-wasm-kws-main.js / .wasm / .data</code> 拖到这里<br>
+      <span class="muted">也可以点击选择文件</span></div>
+    <input type="file" id="pick" multiple accept=".js,.wasm,.data" style="display:none">
+    <div class="files" id="filelist"></div>
+  </div>
+</div>
+
+<div class="step" id="s2">
+  <h2><span class="badge">2</span>自检</h2>
+  <p class="muted">用扩展内置的一段真实音频跑一遍完整检测链路，确认引擎真的能认出「小爱同学」。</p>
+  <div class="btns"><button class="primary" id="run" disabled>运行自检</button></div>
+  <div class="result" id="s2res"></div>
+</div>
+
+<div class="step" id="s3">
+  <h2><span class="badge">3</span>兼容性探测</h2>
+  <p class="muted">有些播放器把 MediaSource 放在 Worker 里，那样扩展抓不到音频数据。
+    打开一个视频页（B 站 / YouTube 都行），回到这里点按钮，我来查。</p>
+  <div class="btns"><button id="probe">探测当前打开的视频页</button></div>
+  <div class="result" id="s3res"></div>
+</div>
+
+<div class="step" id="s4">
+  <h2><span class="badge">4</span>开始用</h2>
+  <p class="muted">装好后打开任意视频页即可自动生效。点浏览器工具栏的图标可以调
+    <b>静音时长</b>和<b>唤醒词表</b>。</p>
+  <p class="muted">挡不住的情况已知有：DRM 内容（音频是密文）、杜比音轨（Chrome 无解码器）、
+    WebRTC 直播（无前瞻缓冲）。遇到时页面上会有提示，不会静默失效。</p>
+</div>
+</div>
+
+<script src="engine-store.js"></script>
+<script src="engine-loader.js"></script>
+<script src="welcome.js"></script>

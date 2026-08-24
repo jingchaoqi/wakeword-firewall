@@ -1,0 +1,70 @@
+{
+  "manifest_version": 3,
+  "name": "唤醒词防火墙",
+  "version": "0.1.0",
+  "description": "屏蔽网页视频里的「小爱同学」等唤醒词，别让视频唤醒你身边的设备。全程本地推理，零网络请求。",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_title": "唤醒词防火墙"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true,
+      "js": [
+        "src/mp4-demux.js",
+        "src/webm-demux.js",
+        "src/main-world.js"
+      ]
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "run_at": "document_start",
+      "world": "ISOLATED",
+      "all_frames": true,
+      "js": [
+        "src/engine-store.js",
+        "src/engine-loader.js",
+        "src/content.js"
+      ],
+      "css": [
+        "src/ui.css"
+      ]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/node-shim.js",
+        "src/kws-worker.js",
+        "vendor/*",
+        "models/*",
+        "keywords.txt",
+        "assets/*",
+        "src/welcome.html",
+        "vendor/build-wasm.sh"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}

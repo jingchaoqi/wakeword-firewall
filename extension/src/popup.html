@@ -1,0 +1,55 @@
+<meta charset="utf-8">
+<style>
+ :root{--ink:#E9E7E2;--dim:#8E9199;--line:#31353B;--sig:#5CBDB5;--warn:#E28762}
+ body{width:300px;margin:0;padding:16px;background:#16181C;color:var(--ink);
+      font:13px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+ h1{font-size:14px;margin:0 0 3px}
+ .sub{color:var(--dim);font-size:11.5px;margin:0 0 14px}
+ .row{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line)}
+ .n{font-variant-numeric:tabular-nums;color:var(--sig);font-weight:600}
+ h2{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);
+    font-weight:600;margin:16px 0 6px;padding-top:12px;border-top:1px solid var(--line)}
+ label.sw{display:flex;align-items:center;gap:8px;cursor:pointer;margin:10px 0}
+ .slider{display:flex;align-items:center;gap:10px;margin:6px 0 4px}
+ input[type=range]{flex:1;accent-color:var(--sig)}
+ .val{font-variant-numeric:tabular-nums;color:var(--sig);font-weight:700;
+      min-width:46px;text-align:right;font-size:13px}
+ .hint{color:var(--dim);font-size:11.5px;line-height:1.55;margin:2px 0 0}
+ .hint b{color:var(--warn);font-weight:600}
+ .presets{display:flex;gap:6px;margin:8px 0 0}
+ .presets button{flex:1;padding:5px 0;border:1px solid var(--line);border-radius:4px;
+   background:#1B1E22;color:var(--dim);font-size:11px;cursor:pointer}
+ .presets button:hover{border-color:var(--sig);color:var(--sig)}
+ .presets button.on{background:#16302F;border-color:var(--sig);color:var(--sig);font-weight:600}
+ textarea{width:100%;height:76px;margin-top:6px;background:#1B1E22;color:#C3C1BB;
+   border:1px solid var(--line);border-radius:4px;padding:8px;
+   font:11px/1.5 ui-monospace,monospace;resize:vertical;box-sizing:border-box}
+ button.save{margin-top:8px;width:100%;padding:7px;border:0;border-radius:4px;
+   background:#1C6A66;color:#fff;font-weight:600;cursor:pointer}
+</style>
+
+<h1>唤醒词防火墙</h1>
+<p class="sub">全程本地推理，不发一个网络请求</p>
+
+<div class="row"><span>本页已屏蔽</span><span class="n" id="c">–</span></div>
+<div class="row"><span>监听中的音频轨</span><span class="n" id="t">–</span></div>
+
+<label class="sw"><input type="checkbox" id="on" checked> 启用防护</label>
+
+<h2>静音时长</h2>
+<div class="slider">
+  <input type="range" id="tail" min="0" max="8" step="0.1" value="0.3">
+  <span class="val" id="tailv">0.3s</span>
+</div>
+<div class="presets">
+  <button data-v="0.3">仅唤醒词</button>
+  <button data-v="2">短指令</button>
+  <button data-v="4">整句指令</button>
+</div>
+<p class="hint" id="tailhint"></p>
+
+<h2>唤醒词表</h2>
+<textarea id="kw" spellcheck="false" placeholder="每行一个唤醒词"></textarea>
+<button class="save" id="save">保存词表</button>
+
+<script src="popup.js"></script>
