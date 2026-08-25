@@ -149,9 +149,8 @@
 
       const mdatStart = s;
       const moofEnd = s - hdr;
-      // traf
-      walk(view, find(view, moofStart + 8, moofEnd, ['mfhd'])
-             ? moofStart + 8 : moofStart + 8, moofEnd, (t2, s2, e2) => {
+      // traf（moofStart + 8 跳过 moof 的 box 头，从它的第一个子 box 开始扫）
+      walk(view, moofStart + 8, moofEnd, (t2, s2, e2) => {
         if (t2 !== 'traf') return;
 
         let defaultDuration = 0, defaultSize = 0, dataOffsetPresent = false;
