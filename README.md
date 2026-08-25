@@ -34,7 +34,7 @@ before they reach your devices. 100% on-device inference, no network requests.
 
 ```
 拦截 appendBuffer → 解封装(fMP4/WebM) → WebCodecs 解码 → 重采样 16k
-    → Worker 里跑唤醒词检测 → 时间戳表 → GainNode 静音（10ms 升余弦升降沿）
+    → offscreen 文档里的 Worker 跑检测 → 时间戳表 → GainNode 静音（10ms 升余弦升降沿）
 ```
 
 零延迟，零音画不同步。播放链上只多了一条增益曲线。
@@ -187,14 +187,17 @@ sherpa-onnx-wasm-kws-main.data     # 模型预加载包，可能有也可能没�
 引导页第 2 步点**运行自检**。它会用一段真实音频跑一遍完整检测链路，
 确认引擎真的能认出「小爱同学」。
 
-> **这一步需要 `extension/assets/selftest.wav`，仓库里没有**——原素材是一段
-> 私人视频里截的，不适合放进公开仓库。自己用任意一段含唤醒词的音频生成：
+> **第一次跑要先准备自检素材**（仓库里不带二进制）：
 >
 > ```bash
-> mkdir -p extension/assets
-> ffmpeg -i 你的素材.mp4 -t 3 -ac 1 -ar 16000 -c:a pcm_s16le \
->   extension/assets/selftest.wav
+> ./extension/tools/fetch-models.sh
 > ```
+>
+> 它会从 sherpa-onnx 官方模型包（Apache-2.0，可再分发）取一段测试音频放到
+> `extension/assets/`，顺便把 `extension/models/` 也准备好（引擎不带 `.data`
+> 预加载包时要用）。这段音频认的是「文森特卡索」而不是唤醒词——自检要验的是
+> 引擎链路通不通，用哪个词无所谓。想换成自己录的「小爱同学」，替换
+> `selftest.wav` 并删掉同目录的 `selftest.json` 即可。
 
 ### 第 6 步 · 兼容性探测
 
@@ -301,7 +304,6 @@ sherpa-onnx-cli text2token --help        # 先看一眼参数，--tokens-type �
 | **WebRTC 通话** | 零缓冲，没有前瞻可用。（直播有 2–5 秒缓冲，对 1.2 秒的唤醒词仍够用） |
 | **浏览器之外的一切** | 本地播放器、微信视频、系统提示音、别人手机外放。扩展只有标签页范围的权限 |
 | **手机上看视频** | 移动端浏览器基本不支持扩展。本方案保护的是「电脑放视频 → 旁边的手机/音箱被唤醒」 |
-| **页面 CSP 禁止 blob: worker** | 检测线程起不来 |
 | **没进词表也不够像的变体** | 模糊层靠韵母近邻集合判定，覆盖面取决于这张表 |
 
 以上情况**都会在页面上提示、徽标变 `—`，不会静默失效**。

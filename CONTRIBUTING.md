@@ -32,7 +32,7 @@
 | 阶段 | 状态 | 内容 |
 |---|---|---|
 | P0 | ✅ 完成 | 离线验证：召回 94.9%、误报 0 次/32 分钟、21x 实时，真实视频 9/9 |
-| P1 | 🚧 进行中 | 单站点预扫描 MVP，端到端链路已在真实 Chromium 里跑通 |
+| P1 | 🚧 进行中 | 预扫描 MVP。全链路已在真实 Chromium 里跑通（含严格 CSP 页面）；fMP4/AAC 那条路还没验 |
 | P2 | 待开始 | 去站点化 + 实时兜底 + 优雅降级 + 上架 |
 | P3 | 开放式 | 社区词库、更隐蔽的处理方式、Firefox 版 |
 
@@ -111,7 +111,8 @@ extension/              Chrome MV3 扩展本体
     kws-worker.js       Worker 里跑 sherpa-onnx KWS
     engine-loader.js    引擎加载：优先包内，其次用户自装
     engine-store.js     引擎存储（chrome.storage.local + base64）
-    background.js       安装即开引导页；统计与徽标
+    offscreen.html/js   ★ 检测宿主：扩展源，绕开页面 CSP，多标签页共用一个 wasm
+    background.js       安装即开引导页；按需创建 offscreen；统计与徽标
     popup.html/js       设置面板：总开关、静音时长、词表编辑
     welcome.html/js     安装引导页（自动检测 / 拖拽装引擎 / 自检 / 站点探测）
     node-shim.js        给 npm 版胶水补的 require("path") 垫片
@@ -140,11 +141,18 @@ p0/                     P0 阶段的研究工具链（Python）
 build/                  出网受限环境下编 wasm 的辅助脚本
 ```
 
-> `build/` 里那几个脚本是在**代理禁掉了 GitHub 的 `/archive/` 打包下载和整个
-> gitlab.com** 的环境里编成功用的：用 `git clone` 造等价 tarball（同 tag 同源码，
-> 只是取法不同）、改 CMake 的哈希校验，eigen 则从 PyPI 的 `cmeel-eigen` 取头文件
-> 加一个最小 CMakeLists 替代。**网络正常的环境用不到这些**，直接跑
-> `build-wasm.sh` 即可。留着是防止将来又遇到类似封锁。
+> `build/` 里那几个脚本用于**出网受限**的环境：有些代理会禁掉 GitHub 的
+> `/archive/` 打包下载（CMake 的 FetchContent 只会走这个），但普通 `git clone`
+> 是通的。`build-loop.py` 的做法是——跑一次构建，只看第一个下载失败的 URL，
+> 用 clone 造一个等价包，放到 sherpa 自己的 `possible_file_locations`
+> （`$HOME/Downloads`）里，同步哈希，再跑一次。**只处理卡住的那一个**，
+> 不递归扫描所有依赖的 URL（openfst 里带着 Hunter 的几百个仓库配置，
+> 递归会进无底洞）。
+>
+> 网络正常的话用不到这些，直接 `build-wasm.sh` 即可。
+> 实测在受限环境里 9 轮跑完，产出 12 MB wasm + 13 MB 模型预加载包。
+> 用法：`WW_WORK=/tmp/ww-build python3 build/build-loop.py`（路径全部走环境变量，
+> 见各脚本头部注释）。
 
 ## 开发环境
 
@@ -166,8 +174,22 @@ build/                  出网受限环境下编 wasm 的辅助脚本
 
 ## 跑测试
 
-`extension/test/` 是 Playwright 端到端测试。先造一段 MSE 测试素材——**需要一个
-含唤醒词的视频，仓库里没有**：
+**先跑这个**——素材自给自足，不需要任何私人视频：
+
+```bash
+node extension/test/e2e-selftest.js
+```
+
+它用 `extension/assets/selftest.wav`（`fetch-models.sh` 取的官方测试音频）现场转成
+WebM/Opus、切成 7 段投喂，跑完整条链路：hook `appendBuffer` → WebM 解封装 →
+WebCodecs 解码 → 重采样 → KWS → GainNode 排程静音。顺便压了 `webm-demux.js`
+跨分段边界的有状态解析。前提是引擎已经内置（跑过 `embed-engine.sh`）。
+
+环境变量：`WW_CHROME` 指定浏览器，`WW_EXT` 指定扩展目录，`WW_MEDIA` 指定素材缓存目录。
+
+---
+
+下面这几个是原有的测试，**需要一段含唤醒词的视频，仓库里没有**：
 
 ```bash
 cd extension/test
@@ -252,7 +274,26 @@ node bundled-test.js    # 引擎已内置时的引导页分支
    （`(0, eval)(glue)`）走全局作用域，否则 `var Module` 会变成局部变量。
    `kws-worker.js` 里两种形态都已支持。
 
-6. **官方构建没把 `FS` 放进 `EXPORTED_RUNTIME_METHODS`。** 带 `.data` 的构建
+6. **`manifest.json` 必须显式声明 `wasm-unsafe-eval`。** 默认 CSP 只有
+   `script-src 'self'`，扩展**页**拿得到 `wasm-unsafe-eval` 但**Worker 拿不到**，
+   于是 `WebAssembly.instantiate` 报 "Refused to compile or instantiate"。
+   这个坑很隐蔽：胶水能加载、报错却出在 wasm 实例化那一步。
+
+7. **扩展页里不能用 blob worker 跑引擎。** `(0, eval)(glue)` 和
+   `importScripts(blobURL)` 在 MV3 扩展页的 CSP 下都会被拦，只有
+   `new Worker(chrome.runtime.getURL('src/kws-worker.js'))` +
+   `importScripts(扩展内 URL)` 走得通。`kws-worker.js` 现在两种都支持：
+   给 `glueUrl` 就走 importScripts，给 `glue` 文本才回退到 eval。
+   顺序不能错——`shimUrl`/`kwsUrl` 先加载，`self.Module` 配好之后才能加载胶水。
+
+8. **`chrome.runtime` 的消息是 JSON 序列化的，不是结构化克隆。** 实测：
+   `ArrayBuffer` 传过去变成 `{}`，`Int16Array` 退化成带数字键的普通对象，
+   只有普通 `Array` 能原样过去。跨上下文传音频必须自己编码（本项目走 base64）。
+
+9. **offscreen 文档拿不到 `chrome.storage`。** 它的 API 面比普通扩展页窄，
+   `chrome.storage` 是 `undefined`。配置得由内容脚本读好、随消息带进去。
+
+10. **官方构建没把 `FS` 放进 `EXPORTED_RUNTIME_METHODS`。** 带 `.data` 的构建
    不需要 FS（模型已由 `--preload-file` 预加载），别写死校验。
 
 > **注意 `extension/vendor/README.md` 有一段已经过时**：它说编完官方 wasm 之后
@@ -264,6 +305,25 @@ node bundled-test.js    # 引擎已内置时的引导页分支
 
 ### 高优先级
 
+- [x] ~~**内容脚本在严格 CSP 的站点上跑不起来**~~ —— **已解决，改成 offscreen 文档**。
+      问题：内容脚本建的 Worker 继承页面的源和 CSP。实测（Chromium 1194）：
+
+      | 场景 | blob worker + eval | 扩展 URL 建 worker |
+      |---|---|---|
+      | 扩展页 | ❌ CSP 拦 | ✅ 通 |
+      | 内容脚本 @ 无 CSP 页面 | ✅ 通 | ❌ 跨源拦 |
+      | 内容脚本 @ `script-src 'self'` 页面 | ❌ CSP 拦 | ❌ 跨源拦 |
+
+      大站基本都在最后一行，两条路全死，而 MV3 不允许把 `unsafe-eval` 写进
+      manifest，没有扩展侧的开关能解开。
+
+      解法：检测搬进 `src/offscreen.html` / `offscreen.js`。offscreen 是**扩展源**，
+      不受页面 CSP 管，能直接 `new Worker(chrome.runtime.getURL(...))`。
+      链路变成 `内容脚本 --Port--> offscreen --> kws-worker`。
+      两个要点：全扩展只能有一个 offscreen 文档，所以它按连接分流（一个 wasm
+      实例、每条音轨一条 stream）；`chrome.runtime` 的消息是 JSON 序列化的，
+      ArrayBuffer 传过去会变成 `{}`，所以 PCM 走 base64（约 43 KB/s）。
+      已在严格 CSP 页面上端到端验证通过（`extension/test/e2e-selftest.js`）。
 - [ ] **跑站点探测**，确认 B 站 / YouTube 没中 MSE-in-Workers。这是唯一可能
       推翻整个架构的未知数：
 
