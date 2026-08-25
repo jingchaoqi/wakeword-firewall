@@ -88,7 +88,9 @@
   };
   const findAll = (u8, s, limit) => {
     const out = [];
-    const end = Math.min(u8.length - s.length, limit ?? u8.length);
+    // +1：最后一个合法起点是 u8.length - s.length，少这个 1 就会漏掉正好落在
+    // 缓冲区末尾的匹配。limit 也要一起夹，否则 ascii() 会越界读到 undefined。
+    const end = Math.min(u8.length - s.length + 1, limit ?? Infinity);
     for (let i = 0; i < end; i++) if (ascii(u8, i, s)) out.push(i);
     return out;
   };
@@ -108,7 +110,8 @@
     const r = { kind: null, codec: null, drm: false, init: false };
     // 初始化段：fMP4 看 moov，WebM 看 DocType "webm"
     if (findAll(u8, 'moov', 4096).length || findAll(u8, 'webm', 4096).length) r.init = true;
-    // DRM：fMP4 的 pssh box，或 WebM 的 ContentEncryption
+    // DRM：这里只认 fMP4 的 pssh box。WebM 的加密标记是 EBML 元素 ID（0x5035），
+    // 不是 ASCII 字符串，扫不出来——那条路靠下面的 encrypted 事件 / mediaKeys 兜底。
     if (findAll(u8, 'pssh', 65536).length) r.drm = true;
 
     // fMP4 的 hdlr box：size(4) type(4) version+flags(4) pre_defined(4) handler_type(4)
@@ -133,7 +136,7 @@
       let t = tracks.get(this);
       if (!t) {
         t = { id: nextId++, appends: 0, bytes: 0, kind: null, codec: null,
-              drm: false, sawInit: false };
+              drm: false, sawInit: false, sniffs: 0 };
         tracks.set(this, t);
       }
       // 必须在调用原函数之前同步取——播放器可能复用同一块 ArrayBuffer
@@ -143,7 +146,10 @@
       if (u8) {
         t.appends++;
         t.bytes += u8.length;
-        if (!t.sawInit || !t.kind) {
+        // 判出来就不再扫。判不出来也最多再试 8 次——否则每个 append（视频轨
+        // 动辄 1MB）都要跑二十来次 64KB 扫描，纯属白烧 CPU。
+        if ((!t.sawInit || !t.kind) && t.sniffs < 8) {
+          t.sniffs++;
           const s = sniff(u8);
           if (s.init) t.sawInit = true;
           if (s.kind && !t.kind) t.kind = s.kind;
@@ -194,7 +200,8 @@
         前瞻: lookahead,
       };
       rows.push(row);
-      if (t.kind === 'audio') audio = { t, row };
+      // 多语言视频会有多条音轨。挑字节数最多的那条报，同时在下面说明还有几条。
+      if (t.kind === 'audio' && (!audio || t.bytes > audio.t.bytes)) audio = { t, row };
     }
 
     log('=========== 探测报告 ===========');
@@ -207,7 +214,10 @@
     }
     console.table(rows);
 
-    const drm = encrypted || [...tracks.values()].some(t => t.drm);
+    // v.mediaKeys 也要查：贴探针的时候 EME 可能早就协商完了，encrypted 事件
+    // 是过去式，再也不会触发一次。
+    const drm = encrypted || v.mediaKeys != null ||
+                [...tracks.values()].some(t => t.drm);
     if (drm) {
       log('❌ 检测到 DRM（encrypted 事件或 pssh box）。');
       log('   EME 下 appendBuffer 拿到的是密文，解密在 CDM 内部完成，JS 永远看不到');
@@ -223,6 +233,11 @@
             + `（4.7x 实时意味着扫 30 秒缓冲只要 6 秒）。`);
       } else {
         log('   读不到该音轨的 buffered 区间（SourceBuffer 可能已被 remove）。');
+      }
+      const nAudio = rows.filter(r => r.类型 === 'audio').length;
+      if (nAudio > 1) {
+        log(`   注意：一共 ${nAudio} 条音轨（多半是多语言），上面报的是字节数最多的那条。`
+            + `真做的时候每条都要扫，或者跟着播放器当前选中的那条走。`);
       }
       log('   结论：**方案在这个站点成立。**');
     } else if (audio && drm) {

@@ -4,7 +4,9 @@ const path = require('path');
   const ext = path.resolve(__dirname, '..');
   const ctx = await chromium.launchPersistentContext('/tmp/ww-profile-' + Date.now(), {
     headless: true,
-    executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+    // 别写死：换台机器就跑不了。用 WW_CHROME 覆盖。
+    executablePath: process.env.WW_CHROME ||
+      '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
     args: [
       `--disable-extensions-except=${ext}`, `--load-extension=${ext}`,
       '--autoplay-policy=no-user-gesture-required', '--no-sandbox',
