@@ -47,9 +47,44 @@ for (const b of document.querySelectorAll('.presets button')) {
     chrome.storage.local.set({ muteTail: v });
   };
 }
+// ── 添加唤醒词 ──────────────────────────────────────────────────────
+// 词表里存的是模型的 token 序列（x iǎo ài t óng x ué @小爱同学），
+// 用户写不出来。这里把中文转好再追加进去。
+function addWord() {
+  const word = $('addword').value.trim();
+  const msg = $('addmsg');
+  if (!word) return;
+
+  const cur = $('kw').value;
+  if (window.WWText2Token.hasWord(cur, word)) {
+    msg.className = 'addmsg bad';
+    msg.textContent = `词表里已经有「${word}」了`;
+    return;
+  }
+
+  const r = window.WWText2Token.convert(word);
+  if (!r.ok) {
+    msg.className = 'addmsg bad';
+    msg.innerHTML = r.error === 'EMPTY' ? '请输入内容'
+      : `转换不了：${r.bad.map(b => `<b>${b.ch}</b>（${b.why}）`).join('、')}`;
+    return;
+  }
+
+  $('kw').value = (cur.endsWith('\n') || !cur ? cur : cur + '\n') + r.line + '\n';
+  $('addword').value = '';
+  msg.className = 'addmsg ok';
+  // 把转换结果亮出来——用户能看见它变成了什么，出问题时也好自己改
+  msg.innerHTML = `已加入「${word}」→ <code>${r.line.split('@')[0].trim()}</code>` +
+    '<br>还要点下面的「保存词表」才生效。';
+}
+
+$('addbtn').onclick = addWord;
+$('addword').onkeydown = (e) => { if (e.key === 'Enter') addWord(); };
+
 $('save').onclick = async () => {
   await chrome.storage.local.set({ keywords: $('kw').value });
   $('save').textContent = '已保存，刷新页面生效';
+  $('addmsg').textContent = '';
 };
 // 「启用防护」的两个方向都需要刷新，但原因不同，说清楚免得用户以为没生效：
 //  关 → 后续不再检测，但本页已经排好的静音仍在增益曲线上，撤不掉

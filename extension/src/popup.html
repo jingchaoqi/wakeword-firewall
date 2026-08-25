@@ -35,6 +35,16 @@
  .notice.on{display:flex;align-items:center;gap:8px;justify-content:space-between}
  .notice button{all:unset;cursor:pointer;padding:3px 10px;border-radius:4px;
    background:var(--warn);color:#16181C;font-size:11px;font-weight:700;flex:none}
+ .add{display:flex;gap:6px;margin:6px 0 0}
+ .add input{flex:1;background:#1B1E22;color:var(--ink);border:1px solid var(--line);
+   border-radius:4px;padding:6px 8px;font:13px inherit;box-sizing:border-box}
+ .add input:focus{outline:0;border-color:var(--sig)}
+ .add button{flex:none;padding:0 14px;border:0;border-radius:4px;background:#1C6A66;
+   color:#fff;font-size:12px;font-weight:600;cursor:pointer}
+ .add button:disabled{background:#2A2E33;color:var(--dim);cursor:default}
+ .addmsg{font-size:11.5px;margin:6px 0 0;line-height:1.5;min-height:1em}
+ .addmsg.ok{color:var(--sig)} .addmsg.bad{color:var(--warn)}
+ .addmsg code{font:11px ui-monospace,monospace;color:var(--dim)}
 </style>
 
 <h1>唤醒词防火墙</h1>
@@ -63,6 +73,11 @@
 <p class="hint" id="tailhint"></p>
 
 <h2>唤醒词表</h2>
+<div class="add">
+  <input id="addword" placeholder="输入中文，如：小爱同学" maxlength="12">
+  <button id="addbtn">添加</button>
+</div>
+<p class="addmsg" id="addmsg"></p>
 <textarea id="kw" spellcheck="false" placeholder="每行一个唤醒词"></textarea>
 <button class="save" id="save">保存词表</button>
 
@@ -71,4 +86,6 @@
   <a class="link" id="probe" title="检查这个站点抓不抓得到音频">兼容性探测</a>
 </div>
 
+<script src="pinyin-data.js"></script>
+<script src="text2token.js"></script>
 <script src="popup.js"></script>

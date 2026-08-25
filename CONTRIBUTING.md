@@ -115,6 +115,8 @@ extension/              Chrome MV3 扩展本体
     background.js       安装即开引导页；按需创建 offscreen；统计与徽标
     popup.html/js       设置面板：总开关、静音时长、词表编辑
     welcome.html/js     安装引导页（自动检测 / 拖拽装引擎 / 自检 / 站点探测）
+    text2token.js       中文 → 模型 token 序列（让用户能直接输中文加词）
+    pinyin-data.js      上面那个的数据（20840 字 / 72KB），由 build/ 的脚本生成
     node-shim.js        给 npm 版胶水补的 require("path") 垫片
     ui.css
   vendor/
@@ -138,7 +140,9 @@ p0/                     P0 阶段的研究工具链（Python）
   setup.sh              装依赖 + 下模型
   keywords.txt
 
-build/                  出网受限环境下编 wasm 的辅助脚本
+build/                  辅助脚本
+  gen-pinyin-data.py    生成 src/pinyin-data.js（需要 pip install pypinyin）
+  build-loop.py 等      出网受限环境下编 wasm 用，见下
 ```
 
 > `build/` 里那几个脚本用于**出网受限**的环境：有些代理会禁掉 GitHub 的
@@ -198,11 +202,19 @@ WebCodecs 解码 → 重采样 → KWS → GainNode 静音。顺便压了 `webm-
 
 环境变量：`WW_CHROME` 指定浏览器，`WW_EXT` 指定扩展目录，`WW_MEDIA` 指定素材缓存目录。
 
-**再跑这个** —— 纯 Node，秒级，不用浏览器也不用引擎：
+**再跑这两个** —— 纯 Node，秒级，不用浏览器也不用引擎：
 
 ```bash
 node extension/test/mp4-demux-test.js
+node extension/test/text2token-test.js
 ```
+
+`text2token-test.js` 的标准答案不是编的：用 `extension/keywords.txt` 里那 9 条
+逐条比对。那些 token 序列当初由官方 `sherpa-onnx-cli text2token` 生成，
+且 P0 阶段在真实音频上验证过能命中——所以这个测试实际在验「浏览器里这套转换
+和官方工具是否等价」。同样做过变异检验（4 处），其中「拆不出时硬返回」那条
+一开始漏了：数据表只收了能拆的字，走 convert() 永远碰不到 null 分支，
+补了直接调 splitSyllable 的用例才盖住。
 
 `mp4-demux.js` 那 220 行一直没法测：B 站主力是 fMP4+AAC，而开源版 Chromium
 不带 AAC，端到端测试根本走不到那一环。但解封装器只认字节结构、不解码，
