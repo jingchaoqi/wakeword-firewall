@@ -94,6 +94,11 @@ ms.addEventListener('sourceopen',async()=>{
   ms.endOfStream();
   log('全部 append 完成，缓冲', sb.buffered.end(0).toFixed(2)+'s');
   window.__appended=true;
+  // 等扩展接管音频输出（建好 GainNode）再播。
+  // 否则是竞态：检测要几秒才出结果，这期间播放已经冲过静音区间，
+  // 增益采样就落不进窗口里了——真实场景有 70 秒前瞻，不会这样。
+  for (let i = 0; i < 200 && !window.__wwGain; i++) await new Promise(r=>setTimeout(r,50));
+  log(window.__wwGain ? '扩展已接管，开始播放' : '等不到扩展接管，仍然开始播放');
   try { await a.play(); log('开始播放'); } catch(e) { log('播放失败', e.message); }
 });
 `);
@@ -122,7 +127,10 @@ ms.addEventListener('sourceopen',async()=>{
 
   const cfg = await ctx.newPage();
   await cfg.goto(`chrome-extension://${id}/src/welcome.html`);
-  await cfg.evaluate(async (kw) => { await chrome.storage.local.set({ keywords: kw, enabled: true }); }, META.keywords);
+  const wantBanner = process.env.WW_NO_BANNER ? false : true;
+  await cfg.evaluate(async ([kw, sb]) => {
+    await chrome.storage.local.set({ keywords: kw, enabled: true, showBanner: sb });
+  }, [META.keywords, wantBanner]);
   await cfg.close();
   console.log(`词表已设为: ${META.keywords}（期望认出「${META.expect}」）`);
 
@@ -146,6 +154,12 @@ ms.addEventListener('sourceopen',async()=>{
   // ── 真的静音了吗 ──────────────────────────────────────────────────
   // 上面那些日志只能证明「排了程」。这里读增益节点的实际采样值，
   // 确认播到静音区间时增益真的掉到 0、出了区间又回到 1。
+  // 提示条开关：命中时页面上该不该出现 .ww-banner
+  const bannerSeen = await page.evaluate(() =>
+    !!document.querySelector('.ww-banner'));
+  console.log(`提示条: 期望${wantBanner ? '出现' : '不出现'} / 实际${bannerSeen ? '出现' : '不出现'}`
+    + (bannerSeen === wantBanner ? ' ✅' : ' ❌'));
+
   const trace = await page.evaluate(() => window.__gainTrace || []);
   let gainVerdict = null;
   if (!trace.length) {
@@ -168,5 +182,5 @@ ms.addEventListener('sourceopen',async()=>{
   console.log(hits.length ? '✅ 全链路打通: ' + hits.join(' | ') : '❌ 没有静音排程');
   console.log((gainVerdict.ok ? '✅' : '❌') + ' 增益实测: ' + JSON.stringify(gainVerdict, null, 0));
   await ctx.close(); srv.close();
-  process.exit(hits.length && gainVerdict.ok ? 0 : 1);
+  process.exit(hits.length && gainVerdict.ok && bannerSeen === wantBanner ? 0 : 1);
 })();

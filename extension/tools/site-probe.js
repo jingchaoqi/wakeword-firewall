@@ -80,6 +80,17 @@
   const tracks = new Map();          // SourceBuffer -> 统计
   let nextId = 1;
 
+  // 顺带 hook addSourceBuffer：它的参数直接就是 mime，比嗅探字节可靠得多。
+  // 贴探针时播放器多半已经建好 SourceBuffer 了，所以这条只在之后重建时才生效
+  // ——B 站切视频、换清晰度都会重建，值多等一会儿。
+  const mimeOf = new WeakMap();
+  const origAdd = MediaSource.prototype.addSourceBuffer;
+  MediaSource.prototype.addSourceBuffer = function (mime) {
+    const sb = origAdd.call(this, mime);
+    try { mimeOf.set(sb, String(mime)); } catch (e) {}
+    return sb;
+  };
+
   // fMP4 的 hdlr box 里 handler type 紧跟其后：'soun' = 音轨, 'vide' = 视频轨。
   // WebM 走 EBML，这里只做粗筛，够探针用。
   const ascii = (u8, i, s) => {
@@ -175,6 +186,13 @@
     SourceBuffer.prototype.appendBuffer = orig;
     v.removeEventListener('encrypted', onEnc);
 
+    // 字节量启发式：音视频分离时视频轨通常是音频轨的几倍到十几倍。
+    // 只在嗅探不出类型时兜底，且会在报告里标明是「推断」。
+    const sizes = [...tracks.values()].map(t => t.bytes).sort((a, b) => a - b);
+    const ratio = sizes.length === 2 && sizes[0] > 0 ? sizes[1] / sizes[0] : 0;
+    const guessable = tracks.size === 2 && ratio >= 3;
+    let guessed = 0;
+
     const rows = [];
     let audio = null;
     for (const [sb, t] of tracks) {
@@ -190,9 +208,23 @@
         } else buffered = '(空)';
       } catch (e) { /* SourceBuffer 可能已被 remove */ }
 
+      // mime 最可靠（来自 addSourceBuffer 的参数），其次是字节嗅探，最后才是猜
+      const mime = mimeOf.get(sb);
+      if (mime && !t.kind) {
+        if (/^audio\//.test(mime)) t.kind = 'audio';
+        else if (/^video\//.test(mime)) t.kind = 'video';
+        const cm = /codecs="?([^";]+)/.exec(mime);
+        if (cm && !t.codec) t.codec = cm[1];
+      }
+      let inferred = false;
+      if (!t.kind && guessable) {
+        t.kind = t.bytes === sizes[0] ? 'audio' : 'video';
+        inferred = true; guessed++;
+      }
+
       const row = {
         轨: t.id,
-        类型: t.kind ?? '未识别',
+        类型: (t.kind ?? '未识别') + (inferred ? '(推断)' : ''),
         编码: t.codec ?? '—',
         append次数: t.appends,
         抓到字节: (t.bytes / 1024).toFixed(0) + ' KB',
@@ -242,6 +274,14 @@
       log('   结论：**方案在这个站点成立。**');
     } else if (audio && drm) {
       log(`   （音轨确实抓到了 ${audio.t.bytes} 字节，但都是密文，用不了。）`);
+    } else if (guessed) {
+      log('⚠️ 没能从字节里嗅出轨道类型，上面的「(推断)」是按字节量猜的。');
+      log('   原因是时机：init segment（带 moov/hdlr/stsd 的那段）在你贴探针之前');
+      log('   就已经 append 完了，后续的 media segment 只有 moof+mdat，没有类型信息。');
+      log('   想拿准确类型：刷新页面后**立刻**贴探针，或者贴完再切一次清晰度');
+      log('   （会重建 SourceBuffer，探针 hook 得到 addSourceBuffer 的 mime）。');
+      log('   不过对「方案成不成立」这个问题，推断已经够了：抓到了独立音轨、');
+      log('   前瞻充足，就是成立。');
     } else if (rows.length === 1) {
       log('⚠️ 只有一个 SourceBuffer，且没识别出音轨类型。');
       log('   可能是音视频混流（muxed）——那样也能做，但解封装要多一步分离音轨。');

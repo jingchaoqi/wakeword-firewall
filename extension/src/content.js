@@ -17,6 +17,9 @@ const BASE = chrome.runtime.getURL('');
 const L = (...a) => console.log('[唤醒词防火墙/桥]', ...a);
 
 let port = null, ready = false, booting = false, enabled = true;
+// 命中时弹不弹提示。只管「已屏蔽 XXX」那一条——
+// 失败类提示（抓不到音频、检测器起不来）不受它控制，那些是必须让人知道的。
+let showBanner = true;
 const queue = [];
 const spansBySb = new Map();
 let muteCount = 0, pcmCount = 0;
@@ -38,8 +41,9 @@ async function bootWorker() {
   booting = true;
   try {
     const cfg = await chrome.storage.local.get(
-      ['enabled', 'score', 'threshold', 'keywords', 'muteTail', 'muteLead']);
+      ['enabled', 'score', 'threshold', 'keywords', 'muteTail', 'muteLead', 'showBanner']);
     if (cfg.enabled === false) { enabled = false; return; }
+    showBanner = cfg.showBanner !== false;
 
     // 宿主拿不到 chrome.storage，配置在这边读好一起送过去
     const kwFile = await fetch(BASE + 'keywords.txt').then(r => r.text());
@@ -82,7 +86,7 @@ function onWorkerMessage(e) {
     toPage({ type: 'ww:timeline', sbId: m.sbId, spans: list });
     muteCount++;
     L(`命中「${m.keyword}」→ 静音 ${m.span[0].toFixed(2)}–${m.span[1].toFixed(2)}s`);
-    banner(`已屏蔽唤醒词「${m.keyword}」`, true);
+    if (showBanner) banner(`已屏蔽唤醒词「${m.keyword}」`, true);
   } else if (m.type === 'config-ok') {
     L(`静音区间已更新：唤醒词前 ${m.hitLead}s / 后 ${m.hitTail}s`);
   } else if (m.type === 'error') {
@@ -99,7 +103,11 @@ function onWorkerMessage(e) {
 
 // 设置改动立即下发，不用刷新页面（对后续命中生效）
 chrome.storage.onChanged.addListener((ch, area) => {
-  if (area !== 'local' || !port) return;
+  if (area !== 'local') return;
+  // showBanner / enabled 跟检测器无关，没连上宿主时也要能改
+  if (ch.showBanner) showBanner = ch.showBanner.newValue !== false;
+  if (ch.enabled) enabled = ch.enabled.newValue !== false;
+  if (!port) return;
   if (ch.muteTail || ch.muteLead) {
     port.postMessage({
       type: 'config',
@@ -107,7 +115,6 @@ chrome.storage.onChanged.addListener((ch, area) => {
       hitLead: ch.muteLead ? ch.muteLead.newValue : undefined,
     });
   }
-  if (ch.enabled) enabled = ch.enabled.newValue !== false;
 });
 
 function stripComments(t) {

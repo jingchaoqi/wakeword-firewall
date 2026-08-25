@@ -24,10 +24,14 @@ function paint(v) {
     $('on').checked = s.enabled;
   } catch { $('c').textContent = '–'; $('t').textContent = '–'; }
 
-  const cfg = await chrome.storage.local.get(['keywords', 'enabled', 'muteTail']);
+  const cfg = await chrome.storage.local.get(
+    ['keywords', 'enabled', 'muteTail', 'showBanner']);
   $('kw').value = cfg.keywords ||
     await fetch(chrome.runtime.getURL('keywords.txt')).then(r => r.text());
   if (cfg.enabled === false) $('on').checked = false;
+  // 默认开：第一次用的人需要看到「它真的在工作」，否则会以为没生效
+  $('banner').checked = cfg.showBanner !== false;
+  paintBanner();
   paint(cfg.muteTail ?? 0.3);
 })();
 
@@ -47,4 +51,41 @@ $('save').onclick = async () => {
   await chrome.storage.local.set({ keywords: $('kw').value });
   $('save').textContent = '已保存，刷新页面生效';
 };
-$('on').onchange = () => chrome.storage.local.set({ enabled: $('on').checked });
+// 「启用防护」的两个方向都需要刷新，但原因不同，说清楚免得用户以为没生效：
+//  关 → 后续不再检测，但本页已经排好的静音仍在增益曲线上，撤不掉
+//  开 → 检测器要在页面加载时挂 hook，中途打开抓不到已经 append 过的音频
+$('on').onchange = async () => {
+  const on = $('on').checked;
+  await chrome.storage.local.set({ enabled: on });
+  $('reloadtext').textContent = on
+    ? '已开启，但本页需要刷新才能开始检测'
+    : '已关闭，本页已排好的静音需刷新后才撤销';
+  $('reload').classList.add('on');
+};
+
+$('doreload').onclick = async () => {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab) { chrome.tabs.reload(tab.id); window.close(); }
+};
+
+$('guide').onclick = () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome.html') });
+  window.close();
+};
+
+$('probe').onclick = () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome.html') + '#probe' });
+  window.close();
+};
+
+function paintBanner() {
+  $('bannerhint').innerHTML = $('banner').checked
+    ? '命中时页面底部弹一条提示，带「误报，恢复」按钮。'
+    : '静音照常生效，只是不再弹提示。<b>误报时也就没有一键恢复的入口了</b>，' +
+      '工具栏图标上的计数仍会走。';
+}
+$('banner').onchange = () => {
+  paintBanner();
+  // 立即生效，不用刷新页面
+  chrome.storage.local.set({ showBanner: $('banner').checked });
+};

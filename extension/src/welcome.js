@@ -112,6 +112,15 @@ $('dlscript').onclick = async () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 };
 
+// popup 里的「兼容性探测」入口带 #probe 过来，直接滚到第 3 步，
+// 免得用户在长页面里自己找
+if (location.hash === '#probe') {
+  addEventListener('DOMContentLoaded', () => {
+    const el = $('s3');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
 // ----------------------------------------------------------- 3. 自检
 
 function parseWav(ab) {
@@ -216,19 +225,20 @@ $('run').onclick = async () => {
     if (hits.length) {
       const h = hits[0];
       mark('s2', 'done');
-      const note = meta && meta.expect
-        ? `测试音频来自 sherpa-onnx 官方模型包，认的是「${meta.expect}」而不是唤醒词——` +
-          `自检要验的是引擎链路通不通，用哪个词无所谓。`
-        : '测试音频是你自己放进 assets/selftest.wav 的那段。';
+      // 别把内部测试词报给用户——素材用的是官方模型包自带的音频，认的不是唤醒词，
+      // 显示出来只会让人困惑「为什么是这几个字」。技术细节留在控制台给开发者。
+      console.log('[自检] 命中', h.keyword, '@', h.at.toFixed(2) + 's',
+                  '静音区间', h.span.map(x => x.toFixed(2)).join('–') + 's');
       show('s2res', 'good',
-        `<b>✓ 检测正常</b> —— 在 ${h.at.toFixed(2)}s 处认出「${h.keyword}」，` +
-        `静音区间 ${h.span[0].toFixed(2)}–${h.span[1].toFixed(2)}s。` +
-        `<br><span class="muted">${note}</span>`);
+        '<b>✓ 检测引擎工作正常</b>' +
+        '<br><span class="muted">已完整跑通一遍检测链路，用时 ' +
+        `${((h.span[1] - h.span[0])).toFixed(1)} 秒的音频片段。可以开始用了。</span>`);
     } else {
       mark('s2', 'fail');
       show('s2res', 'bad',
-        '<b>引擎加载成功，但没认出唤醒词。</b>多半是词表被改坏了，' +
-        '或者引擎用的模型和词表的 token 体系对不上（本词表用的是拼音声母+韵母）。');
+        '<b>引擎加载成功，但没认出测试音频里的词。</b>多半是词表被改坏了，' +
+        '或者引擎用的模型和词表的 token 体系对不上（本词表用的是拼音声母+韵母）。' +
+        '<br><span class="muted">控制台有详细日志。</span>');
     }
   } catch (err) {
     mark('s2', 'fail');
