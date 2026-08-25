@@ -63,6 +63,23 @@ const DIR = process.env.WW_MEDIA || '/tmp/ww-e2e-media';
     '<body><audio id=a controls></audio><pre id=log></pre>' +
     '<script src="player.js"></script>');
   fs.writeFileSync(DIR + '/player.js', `
+// 增益探针：扩展会 createGain() 建一个节点插进音频图，这里把它截下来，
+// 播放时按 50ms 采样它的**实际值**。这样验的是「真的静音了」，
+// 而不只是日志里那句「已排程静音」——两者差得很远。
+// 扩展的 attachGain 是收到时间戳表之后才调用的，远晚于本脚本，所以能拦到。
+const __origCreateGain = AudioContext.prototype.createGain;
+window.__gainTrace = [];
+AudioContext.prototype.createGain = function () {
+  const g = __origCreateGain.call(this);
+  if (!window.__wwGain) {
+    window.__wwGain = g;
+    const a0 = document.getElementById('a');
+    setInterval(() => {
+      window.__gainTrace.push([+a0.currentTime.toFixed(3), +g.gain.value.toFixed(4)]);
+    }, 50);
+  }
+  return g;
+};
 const log=(...m)=>{document.getElementById('log').textContent+=m.join(' ')+'\\n';console.log('[测试页]',...m)};
 const a=document.getElementById('a');
 const ms=new MediaSource();
@@ -77,6 +94,7 @@ ms.addEventListener('sourceopen',async()=>{
   ms.endOfStream();
   log('全部 append 完成，缓冲', sb.buffered.end(0).toFixed(2)+'s');
   window.__appended=true;
+  try { await a.play(); log('开始播放'); } catch(e) { log('播放失败', e.message); }
 });
 `);
 
@@ -124,8 +142,31 @@ ms.addEventListener('sourceopen',async()=>{
   for (const l of logs) if (/测试页/.test(l)) console.log('  ' + l.slice(0, 160));
 
   const hits = logs.filter(l => /已排程静音|命中/.test(l));
+
+  // ── 真的静音了吗 ──────────────────────────────────────────────────
+  // 上面那些日志只能证明「排了程」。这里读增益节点的实际采样值，
+  // 确认播到静音区间时增益真的掉到 0、出了区间又回到 1。
+  const trace = await page.evaluate(() => window.__gainTrace || []);
+  let gainVerdict = null;
+  if (!trace.length) {
+    gainVerdict = { ok: false, why: '没采到增益样本（扩展没接管音频输出？）' };
+  } else {
+    const span = [0.85, 2.70];
+    const inside = trace.filter(([t]) => t > span[0] + 0.1 && t < span[1] - 0.1);
+    const after = trace.filter(([t]) => t > span[1] + 0.3);
+    const maxIn = inside.length ? Math.max(...inside.map(x => x[1])) : null;
+    const minAfter = after.length ? Math.min(...after.map(x => x[1])) : null;
+    gainVerdict = {
+      ok: maxIn !== null && maxIn < 0.05 && minAfter !== null && minAfter > 0.9,
+      samples: trace.length, 区间内样本: inside.length, 区间内最大增益: maxIn,
+      区间后样本: after.length, 区间后最小增益: minAfter,
+      播放到: trace.length ? trace[trace.length - 1][0] : 0,
+    };
+  }
+
   console.log('\n──── 判定 ────');
   console.log(hits.length ? '✅ 全链路打通: ' + hits.join(' | ') : '❌ 没有静音排程');
+  console.log((gainVerdict.ok ? '✅' : '❌') + ' 增益实测: ' + JSON.stringify(gainVerdict, null, 0));
   await ctx.close(); srv.close();
-  process.exit(hits.length ? 0 : 1);
+  process.exit(hits.length && gainVerdict.ok ? 0 : 1);
 })();

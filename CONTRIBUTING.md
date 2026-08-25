@@ -182,8 +182,19 @@ node extension/test/e2e-selftest.js
 
 它用 `extension/assets/selftest.wav`（`fetch-models.sh` 取的官方测试音频）现场转成
 WebM/Opus、切成 7 段投喂，跑完整条链路：hook `appendBuffer` → WebM 解封装 →
-WebCodecs 解码 → 重采样 → KWS → GainNode 排程静音。顺便压了 `webm-demux.js`
+WebCodecs 解码 → 重采样 → KWS → GainNode 静音。顺便压了 `webm-demux.js`
 跨分段边界的有状态解析。前提是引擎已经内置（跑过 `embed-engine.sh`）。
+
+**它有两个独立判定，别只看第一个**：
+
+- *全链路打通* —— 日志里出现了命中和排程
+- *增益实测* —— 在测试页 hook `AudioContext.prototype.createGain` 截住扩展建的
+  那个节点，播放时按 50ms 采样它的**实际值**，确认静音区间内掉到 0、区间外回到 1
+
+第二条是必要的：日志那句「已排程静音」只证明排了程。做过负向对照——
+把 `linearRampToValueAtTime(0.0001, t0)` 去掉，日志**照样是绿的**，
+只有增益实测变红（区间内最大增益 1）；把恢复那一步去掉，则是区间后最小增益
+停在 0.0001。改静音逻辑时请照这个方式验。
 
 环境变量：`WW_CHROME` 指定浏览器，`WW_EXT` 指定扩展目录，`WW_MEDIA` 指定素材缓存目录。
 
