@@ -1,11 +1,15 @@
 import hashlib, os, re, glob
-SO='/home/claude/work/so'
+
+# 路径可配置，理由同 build-loop.py
+WORK = os.environ.get('WW_WORK', os.path.expanduser('~/ww-build'))
+SO = os.environ.get('SHERPA_DIR', os.path.join(WORK, 'sherpa-onnx'))
+DL = os.environ.get('WW_DL', os.path.join(WORK, 'dl'))
 n_files=0
 for f in glob.glob(f'{SO}/cmake/*.cmake'):
     s=open(f,encoding='utf-8').read()
     m=re.search(r'Downloads/([A-Za-z0-9._-]+\.(?:tar\.gz|zip))', s)
     if not m: continue
-    p=os.path.join('/root/Downloads', m.group(1))
+    p=os.path.join(DL, m.group(1))
     if not os.path.exists(p): continue
     h=hashlib.sha256(open(p,'rb').read()).hexdigest()
     new,k=re.subn(r'(_HASH\s+")SHA256=[0-9a-fA-F]+(")', r'\1SHA256='+h+r'\2', s)

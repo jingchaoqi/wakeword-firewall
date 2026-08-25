@@ -10,12 +10,18 @@
 """
 import hashlib, os, re, shutil, subprocess, sys, tarfile, zipfile, glob
 
-SO = '/home/claude/work/so'
+# 路径全部可配置——写死成某台机器的绝对路径的话，这个脚本对别人就是废的。
+HERE = os.path.dirname(os.path.abspath(__file__))
+WORK = os.environ.get('WW_WORK', os.path.expanduser('~/ww-build'))
+SO = os.environ.get('SHERPA_DIR', os.path.join(WORK, 'sherpa-onnx'))
+DL = os.environ.get('WW_DL', os.path.join(WORK, 'dl'))
 BUILD = f'{SO}/build-wasm-simd-kws'
-DL = '/root/Downloads'
-LOG = '/home/claude/work/build.log'
-FETCH = '/home/claude/work/fetch-dep.sh'
+LOG = os.path.join(WORK, 'build.log')
+FETCH = os.path.join(HERE, 'fetch-dep.sh')
+RUN = os.path.join(HERE, 'run-build.sh')
 OUT = f'{BUILD}/install/bin/wasm'
+ROUNDS = int(os.environ.get('WW_ROUNDS', '20'))
+os.makedirs(DL, exist_ok=True)
 
 FAIL_RE = re.compile(r"error: downloading '(https://github\.com/[^']+)' failed")
 ARCH_RE = re.compile(r'https://github\.com/([^/]+/[^/]+)/archive/(.+?)\.(tar\.gz|zip)$')
@@ -28,12 +34,14 @@ def sha(p):
 def run_build():
     shutil.rmtree(BUILD, ignore_errors=True)
     with open(LOG, 'w') as f:
-        subprocess.run(['/home/claude/work/run-build.sh'], stdout=f, stderr=f)
+        subprocess.run([RUN], stdout=f, stderr=f, env={**os.environ,
+                       'WW_WORK': WORK, 'SHERPA_DIR': SO})
     return os.path.isdir(OUT)
 
 
 def fetch(repo, ref, top, out):
-    r = subprocess.run([FETCH, repo, ref, top, out], capture_output=True, text=True)
+    subprocess.run([FETCH, repo, ref, top, out], capture_output=True, text=True,
+                   env={**os.environ, 'WW_WORK': WORK, 'WW_DL': DL})
     p = os.path.join(DL, out)
     return (p, sha(p)) if os.path.exists(p) else (None, None)
 
@@ -48,7 +56,7 @@ def tar_members(p):
 
 def repack_with(tarball, relpath, content):
     """把改好的文件写回源头 tarball（_deps 每次配置都会重解，不写回就白改）"""
-    tmp = '/tmp/_rp'
+    tmp = os.path.join(WORK, '_repack')
     shutil.rmtree(tmp, ignore_errors=True)
     os.makedirs(tmp)
     with tarfile.open(tarball) as t:
@@ -64,6 +72,21 @@ def repack_with(tarball, relpath, content):
     return True
 
 
+def place_in_downloads(tarball, cmake_text):
+    """按 cmake 里 possible_file_locations 期望的文件名，把包放到 ~/Downloads。
+
+    sherpa 的 cmake 会优先用这个位置的本地文件，并把 URL2 清空——这是上游
+    支持的离线路径，比改 URL 稳。返回落地路径，没法判定文件名时返回 None。
+    """
+    m = re.search(r'Downloads/([A-Za-z0-9._-]+\.(?:tar\.gz|zip))', cmake_text)
+    if not m:
+        return None
+    dst = os.path.join(os.path.expanduser('~/Downloads'), m.group(1))
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    shutil.copyfile(tarball, dst)
+    return dst
+
+
 def sync_hash_for(tarball):
     h = sha(tarball)
     for f in glob.glob(f'{SO}/cmake/*.cmake'):
@@ -74,9 +97,14 @@ def sync_hash_for(tarball):
         if new != s:
             open(f, 'w', encoding='utf-8').write(new)
             print(f"      同步哈希 → {os.path.basename(f)}")
+        # 关键：repack 之后包的内容和哈希都变了，~/Downloads 里那份必须一起换掉。
+        # 否则 sherpa 优先用旧的那份，跟刚同步的哈希对不上，直接 SHA256 校验失败。
+        d = place_in_downloads(tarball, new)
+        if d:
+            print(f"      刷新 {d}")
 
 
-for rnd in range(1, 21):
+for rnd in range(1, ROUNDS + 1):
     print(f"\n=== 第 {rnd} 轮 ===", flush=True)
     if run_build():
         print("构建成功！", flush=True)
@@ -129,8 +157,20 @@ for rnd in range(1, 21):
         print("    ❌ 找不到引用它的 cmake")
         sys.exit(1)
 
+    # 优先走 sherpa 自己的离线机制：它的 cmake 里有一段 possible_file_locations，
+    # 会去 $HOME/Downloads 等处找预下载的包，找到就用本地文件并把 URL2 清空。
+    # 这条路是上游支持的，比改 URL 稳——只要文件名对得上。
+    for p, s in targets:
+        dst = place_in_downloads(path, s)
+        if dst:
+            print(f"    放到 {dst}（走 sherpa 的 possible_file_locations）")
+
+    # 保险起见仍然改一遍 URL，并且**必须同时把 URL2 清空**：
+    # CMake 对多元素 URL 列表会报 "At least one entry of URL is a path
+    # (invalid in a list)"，列表只剩一个元素时这个检查才不触发。
     for p, s in targets:
         new = s.replace(url, path)
+        new = re.sub(r'(set\(\s*\w+_URL2\s+)"[^"]*"', r'\1', new)
         new = re.sub(r'(_HASH\s+")SHA256=[0-9a-fA-F]+(")', r'\1SHA256=' + h + r'\2', new)
         open(p, 'w', encoding='utf-8').write(new)
         print(f"    改 {p.replace(SO + '/', '')}")
