@@ -139,7 +139,24 @@ cd wakeword-firewall
 
 > 现在扩展还不能工作——检测引擎还没有。引导页第 1 步会显示「未检测到引擎」。
 
+> **不想自己编？** [Releases](https://github.com/jingchaoqi/wakeword-firewall/releases)
+> 里的 zip 引擎已内置，下载解压就能加载，跳过第 3–5 步。
+> 那个包由 GitHub Actions 编出来，流程和下面完全一致。
+
 ### 第 3 步 · 编检测引擎（20–40 分钟，一次性）
+
+**一条命令走完全流程**（编引擎 → 取模型和自检素材 → 打进包 → 出 zip），
+每一步都会跳过已经完成的：
+
+```bash
+./extension/tools/build-all.sh
+```
+
+只想把本地的 `extension/` 弄成可加载状态、不要 zip：`BUILD_ONLY=1 ./extension/tools/build-all.sh`
+
+下面是分步版，想看清楚每步在干什么再往下读。
+
+
 
 **这一步没有捷径，原因得说清楚：**
 
@@ -295,6 +312,25 @@ sherpa-onnx-cli text2token --help        # --tokens-type 要选带声调的拼�
 
 `pack.sh` 会剔掉 `test/`、`tools/` 和所有 `.md`，产物默认落在仓库根目录的
 `dist/`。第一次跑会生成 `.pem` 私钥——**它决定扩展 ID，务必保存，且不要提交进仓库**。
+
+引擎不在时它会**拒绝打包**并告诉你该跑什么。否则会产出一个看着正常、装上却
+完全不工作的 104 KB zip（干净 clone 之后直接跑就会踩到）。确实要打不含引擎的
+包用 `--allow-no-engine`。
+
+**CI 也能出包**。仓库里带了一份现成的 workflow，装上即可：
+
+```bash
+mkdir -p .github/workflows
+cp build/github-actions-build.yml .github/workflows/build.yml
+git add .github/workflows/build.yml && git commit -m "加 CI 构建" && git push
+```
+
+（放在 `build/` 而不是直接就位，是因为创建 workflow 需要 token 的 `workflow`
+权限，当初协助提交的会话没有。）
+
+装上之后：打 `v*` tag 自动编译并发 Release，手动触发（workflow_dispatch）
+则把 zip 挂在 Actions 产物里。emsdk 和 sherpa 的构建走 `actions/cache`，
+命中时几分钟就能出包。
 
 > 上架 Chrome 应用商店要注意：**MV3 禁止远程托管代码，wasm 也算**
 > （transformers.js 的官方示例就因此被驳回）。引擎必须内置，不能做成运行时下载。

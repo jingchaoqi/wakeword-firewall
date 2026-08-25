@@ -123,8 +123,11 @@ extension/              Chrome MV3 扩展本体
     sherpa-onnx-kws.js  KWS 的 JS 封装（来自 npm sherpa-onnx，纯 JS，与环境无关）
     build-wasm.sh       编浏览器版 wasm 引擎的脚本
   tools/
+    build-all.sh        ★ 一条命令走完全流程，每步都跳过已完成的
+    fetch-models.sh     取模型与自检素材（sherpa-onnx 官方发布，Apache-2.0）
     embed-engine.sh     把编好的引擎打进包（分发前跑这一次）
-    pack.sh             出 .zip（商店）+ .crx（企业策略）
+    pack.sh             出 .zip（商店）+ .crx（企业策略）；引擎不在时会拒绝打包
+    site-probe.js       站点兼容性探针，粘进控制台跑
   test/                 Playwright 端到端测试
 
 p0/                     P0 阶段的研究工具链（Python）

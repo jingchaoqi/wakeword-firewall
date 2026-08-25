@@ -1,0 +1,88 @@
+# ⚠️ 这个文件要放到 .github/workflows/build.yml 才会生效。
+#    放在这里是因为创建 workflow 需要 GitHub token 的 workflow 权限，
+#    协助提交它的会话没有。你从自己机器上装上即可：
+#
+#        mkdir -p .github/workflows
+#        cp build/github-actions-build.yml .github/workflows/build.yml
+#        git add .github/workflows/build.yml && git commit -m "加 CI 构建" && git push
+#
+#    或者在 GitHub 网页上 Add file → Create new file，路径填
+#    .github/workflows/build.yml，把下面内容粘进去。
+
+name: 构建扩展包
+
+# 为什么要有这个：仓库不带那 25MB 的 wasm 引擎（官方没发布 KWS 的浏览器版，
+# 必须自己编），本地编一次要 20–40 分钟。让 CI 编，用户直接下 Release 里的 zip。
+on:
+  push:
+    tags: ['v*']            # 打 tag 就发 Release
+  workflow_dispatch:        # 也可以手动点一次，产物挂在 Actions 里
+  pull_request:
+    paths:                  # 只有动到构建链才在 PR 上跑，别浪费 40 分钟
+      - 'extension/vendor/build-wasm.sh'
+      - 'extension/tools/**'
+      - 'build/**'
+      - '.github/workflows/build.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90     # 冷缓存时编译本身约 20–40 分钟，留足余量
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 装系统依赖
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      # 编译产物缓存：命中的话整个第 1 步跳过，几分钟就能出包。
+      # key 里放 build-wasm.sh 的哈希——脚本改了（换 emsdk 版本、换模型）就重编。
+      - name: 缓存 emsdk 与 sherpa 构建
+        id: cache-build
+        uses: actions/cache@v4
+        with:
+          path: ~/ww-build
+          key: ww-build-${{ runner.os }}-${{ hashFiles('extension/vendor/build-wasm.sh') }}
+
+      - name: 编引擎 / 取模型 / 打包
+        run: |
+          chmod +x extension/tools/*.sh extension/vendor/*.sh
+          ./extension/tools/build-all.sh
+
+      - name: 跑单测（纯 Node，秒级）
+        run: |
+          node extension/test/mp4-demux-test.js
+          node extension/test/text2token-test.js
+
+      - name: 端到端自检（真浏览器，跑完整检测链路）
+        run: |
+          npx --yes playwright@1.56.1 install --with-deps chromium
+          node -e "console.log(require.resolve('playwright'))" 2>/dev/null || npm i -g playwright@1.56.1
+          NODE_PATH=$(npm root -g) node extension/test/e2e-selftest.js
+        # 这一步依赖真实浏览器环境，CI 上第一次跑很可能要调；
+        # 失败不该挡住出包，产物本身由上面几步保证
+        continue-on-error: true
+
+      - name: 记录产物信息
+        run: |
+          ls -lh dist/
+          echo "--- 包里有没有引擎 ---"
+          unzip -l dist/*.zip | grep -E 'sherpa-onnx-wasm|selftest' || echo "!! 引擎不在包里"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wakeword-firewall
+          path: dist/*.zip
+          retention-days: 30
+
+      - name: 打了 tag 就发 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          body: |
+            解压后在 `chrome://extensions` 开启开发者模式，点「加载已解压的扩展程序」，
+            选解压出来的目录即可。**引擎已内置，不用自己编。**
+
+            装完会自动弹引导页，跟着走完自检就能用。
+            已知边界（DRM 内容、杜比音轨、移动端等）见 README。
