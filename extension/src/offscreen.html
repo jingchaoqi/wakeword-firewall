@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>唤醒词防火墙 · 检测宿主</title>
+<!--
+  这个页面没有 UI，用户永远看不到它。它存在的唯一理由是**源**：
+
+  内容脚本跑在页面的源上，它建的 Worker 必然继承页面的 CSP。大站基本都是
+  script-src 'self'，于是 blob worker 里的 eval 被拦、扩展 URL 建 worker 又
+  跨源被拦——两条路全死（已实测）。
+
+  offscreen 文档是扩展源，不受页面 CSP 管，能直接
+  new Worker(chrome.runtime.getURL('src/kws-worker.js'))，这是唯一走得通的路。
+
+  全扩展只能有一个 offscreen 文档，所以它要同时服务所有标签页：
+  每个内容脚本连一条 Port 进来，共用一个 wasm 实例、各自一条检测流。
+-->
+<script src="engine-store.js"></script>
+<script src="engine-loader.js"></script>
+<script src="offscreen.js"></script>

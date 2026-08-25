@@ -7,13 +7,18 @@
     "storage",
     "unlimitedStorage",
     "scripting",
-    "tabs"
+    "tabs",
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "background": {
     "service_worker": "src/background.js"
+  },
+  "content_security_policy": {
+    "_comment": "必须显式声明 wasm-unsafe-eval，否则 Worker 里 WebAssembly.instantiate 会被拦：'Refused to compile or instantiate WebAssembly module'。默认 CSP 只有 script-src 'self'，扩展页拿得到 wasm-unsafe-eval 但 Worker 拿不到。MV3 允许 wasm-unsafe-eval（不允许 unsafe-eval）。",
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
   "action": {
     "default_popup": "src/popup.html",
@@ -41,8 +46,6 @@
       "world": "ISOLATED",
       "all_frames": true,
       "js": [
-        "src/engine-store.js",
-        "src/engine-loader.js",
         "src/content.js"
       ],
       "css": [
@@ -60,7 +63,9 @@
         "keywords.txt",
         "assets/*",
         "src/welcome.html",
-        "vendor/build-wasm.sh"
+        "vendor/build-wasm.sh",
+        "src/offscreen.html",
+        "src/offscreen.js"
       ],
       "matches": [
         "<all_urls>"

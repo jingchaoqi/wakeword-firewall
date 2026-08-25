@@ -141,31 +141,45 @@ $('run').onclick = async () => {
     const eng = await window.WWEngineLoader.load();
     if (!eng) throw new Error('引擎不在');
     const glue = eng.glue, wasm = eng.wasm, data = eng.data;
-    const [kwsjs, shim, wsrc, kwFile, wav] = await Promise.all([
-      fetch(chrome.runtime.getURL('vendor/sherpa-onnx-kws.js')).then(r => r.text()),
-      fetch(chrome.runtime.getURL('src/node-shim.js')).then(r => r.text()),
-      fetch(chrome.runtime.getURL('src/kws-worker.js')).then(r => r.text()),
-      fetch(chrome.runtime.getURL('keywords.txt')).then(r => r.text()),
-      fetch(chrome.runtime.getURL('assets/selftest.wav')).then(r => r.arrayBuffer()),
-    ]);
+    const kwFile = await fetch(chrome.runtime.getURL('keywords.txt')).then(r => r.text());
 
-    const blob = new Blob([shim, '\n;\n', kwsjs, '\n;\n', wsrc],
-                          { type: 'text/javascript' });
-    const url = URL.createObjectURL(blob);
-    const w = new Worker(url);
-    URL.revokeObjectURL(url);
+    // 自检素材单独取，不能混进上面的 Promise.all。
+    // 扩展页里 fetch 不存在的资源是**抛 TypeError**，不是返 404（已实测），
+    // 混在一起会让整个自检报一句没头没脑的 "Failed to fetch"，
+    // 而仓库默认就是不带 selftest.wav 的——等于每个自建用户都会撞上。
+    const wav = await fetch(chrome.runtime.getURL('assets/selftest.wav'))
+      .then(r => r.arrayBuffer())
+      .catch(() => { throw new Error('MISSING_SELFTEST_WAV'); });
 
-    const keywords = kwFile.split('\n')
+    // 素材配套的词表：官方 test_wavs 认的不是「小爱同学」，得按素材来。
+    // 没有这份 json 就沿用扩展自己的词表（用户自备了「小爱同学」录音的情况）。
+    const meta = await fetch(chrome.runtime.getURL('assets/selftest.json'))
+      .then(r => r.json()).catch(() => null);
+
+    // 必须用扩展 URL 建 worker，不能拼成 blob。
+    // MV3 扩展页的 CSP 是 script-src 'self' 'wasm-unsafe-eval'：blob worker 里
+    // 无论 eval 还是 importScripts 都会被拦，只有「扩展 URL 建的 worker +
+    // importScripts 扩展内 URL」这一条走得通（已实测）。
+    if (eng.source !== 'bundled') {
+      throw new Error('CSP_NEEDS_BUNDLED');
+    }
+    const w = new Worker(chrome.runtime.getURL('src/kws-worker.js'));
+
+    const keywords = meta && meta.keywords ? meta.keywords : kwFile.split('\n')
       .filter(l => l.trim() && !l.trim().startsWith('#')).join('\n');
 
+    // 引擎自带 .data 时模型已经在虚拟文件系统里；否则要从 models/ 单独送。
+    // 同样注意：缺文件是抛异常不是 404，得给出能照做的提示。
     const models = data ? null : await (async () => {
       const g = (p) => fetch(chrome.runtime.getURL(p)).then(r => r.arrayBuffer());
-      return {
-        encoder: await g('models/encoder.int8.onnx'),
-        decoder: await g('models/decoder.onnx'),
-        joiner: await g('models/joiner.int8.onnx'),
-        tokens: await g('models/tokens.txt'),
-      };
+      try {
+        return {
+          encoder: await g('models/encoder.int8.onnx'),
+          decoder: await g('models/decoder.onnx'),
+          joiner: await g('models/joiner.int8.onnx'),
+          tokens: await g('models/tokens.txt'),
+        };
+      } catch (e) { throw new Error('MISSING_MODELS'); }
     })();
 
     const hits = [];
@@ -190,7 +204,10 @@ $('run').onclick = async () => {
     });
 
     w.postMessage({
-      type: 'init', wasmBinary: wasm, dataPackage: data || null, glue,
+      type: 'init', wasmBinary: wasm, dataPackage: data || null,
+      glueUrl: chrome.runtime.getURL('vendor/sherpa-onnx-wasm.js'),
+      shimUrl: chrome.runtime.getURL('src/node-shim.js'),
+      kwsUrl: chrome.runtime.getURL('vendor/sherpa-onnx-kws.js'),
       models, keywords, score: 2.0, threshold: 0.25,
     });
     await done;
@@ -199,10 +216,14 @@ $('run').onclick = async () => {
     if (hits.length) {
       const h = hits[0];
       mark('s2', 'done');
+      const note = meta && meta.expect
+        ? `测试音频来自 sherpa-onnx 官方模型包，认的是「${meta.expect}」而不是唤醒词——` +
+          `自检要验的是引擎链路通不通，用哪个词无所谓。`
+        : '测试音频是你自己放进 assets/selftest.wav 的那段。';
       show('s2res', 'good',
         `<b>✓ 检测正常</b> —— 在 ${h.at.toFixed(2)}s 处认出「${h.keyword}」，` +
         `静音区间 ${h.span[0].toFixed(2)}–${h.span[1].toFixed(2)}s。` +
-        `<br><span class="muted">测试音频是一段真实短视频，开头喊了一声「小爱同学」。</span>`);
+        `<br><span class="muted">${note}</span>`);
     } else {
       mark('s2', 'fail');
       show('s2res', 'bad',
@@ -211,9 +232,33 @@ $('run').onclick = async () => {
     }
   } catch (err) {
     mark('s2', 'fail');
-    show('s2res', 'bad', '<b>自检失败：</b>' + (err.message || err) +
-      '<br><span class="muted">最常见的原因是拖错了文件——需要的是 ' +
-      '<code>sherpa-onnx-wasm-kws-main.js</code>（不是 npm 包里那个 nodejs 版）。</span>');
+    if (err.message === 'CSP_NEEDS_BUNDLED') {
+      show('s2res', 'bad',
+        '<b>拖进来的引擎没法在扩展页里跑</b> —— MV3 的 CSP 是 ' +
+        '<code>script-src \'self\'</code>，「以文本形式存起来再执行」的引擎会被拦死' +
+        '（eval 和 blob importScripts 都不行）。' +
+        '<br>把引擎打进扩展包再试：' +
+        '<br><code>./extension/tools/embed-engine.sh &lt;构建产物目录&gt;</code>' +
+        '<br><span class="muted">跑完回 chrome://extensions 点刷新。</span>');
+    } else if (err.message === 'MISSING_MODELS') {
+      show('s2res', 'bad',
+        '<b>缺模型文件</b> —— 你这份引擎没带 <code>.data</code> 预加载包，' +
+        '需要 <code>extension/models/</code> 单独提供模型，但那个目录是空的。' +
+        '<br><code>./extension/tools/fetch-models.sh</code>' +
+        '<br><span class="muted">跑完回 chrome://extensions 点刷新再试。</span>');
+    } else if (err.message === 'MISSING_SELFTEST_WAV') {
+      // 这不是引擎的问题，别把用户往「拖错文件」上引——仓库默认就不带这个素材。
+      show('s2res', 'bad',
+        '<b>缺自检素材</b> —— 仓库里不带 <code>extension/assets/selftest.wav</code>。' +
+        '<br>跑一下这个脚本会从 sherpa-onnx 官方模型包取一份（可再分发）：' +
+        '<br><code>./extension/tools/fetch-models.sh</code>' +
+        '<br><span class="muted">跑完回 chrome://extensions 点扩展的刷新图标，再点一次自检。' +
+        '想用自己录的「小爱同学」，就替换掉 selftest.wav 并删掉同目录的 selftest.json。</span>');
+    } else {
+      show('s2res', 'bad', '<b>自检失败：</b>' + (err.message || err) +
+        '<br><span class="muted">最常见的原因是拖错了文件——需要的是 ' +
+        '<code>sherpa-onnx-wasm-kws-main.js</code>（不是 npm 包里那个 nodejs 版）。</span>');
+    }
   } finally {
     $('run').disabled = false;
   }

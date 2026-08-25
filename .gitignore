@@ -11,7 +11,8 @@ extension/vendor/sherpa-onnx-wasm.data
 *.wasm
 
 # ── 测试音视频素材（含唤醒词的私人素材，不入库）────────────────
-extension/assets/
+extension/assets/*
+!extension/assets/selftest.json
 extension/test/*.m4s
 extension/test/*.mpd
 *.mp4

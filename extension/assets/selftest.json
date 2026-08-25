@@ -1,0 +1,6 @@
+{
+  "_comment": "引导页自检用。素材来自 sherpa-onnx 官方 KWS 模型包的 test_wavs/3.wav（Apache-2.0），不是唤醒词录音——自检要验的是引擎链路通不通，用哪个词无所谓。想换成自己录的「小爱同学」，替换 selftest.wav 并把 keywords/expect 改掉即可。",
+  "source": "sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01/test_wavs/3.wav",
+  "keywords": "w én s ēn t è k ǎ s uǒ @文森特卡索",
+  "expect": "文森特卡索"
+}
