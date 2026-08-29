@@ -37,11 +37,15 @@
    display:flex;justify-content:space-between;align-items:center}
  .link{color:var(--sig);font-size:11.5px;cursor:pointer;text-decoration:none}
  .link:hover{text-decoration:underline}
+ /* 提示框不要自己的底色。以前写死的是深色 #33211A，配上跟随主题的深色文字
+    （月白档下 --ink 是 #2a261e）就是深底深字，整段看不见。
+    底色跟主题走，只用边框和标题色把「这是警告」表达出来。 */
  .notice{display:none;margin:8px 0 0;padding:8px 10px;border-radius:4px;
-   background:#33211A;border:1px solid var(--warn);color:var(--ink);font-size:11.5px}
+   background:transparent;border:1px solid var(--warn);color:var(--ink);font-size:11.5px}
  .notice.on{display:flex;align-items:center;gap:8px;justify-content:space-between}
  .notice button{all:unset;cursor:pointer;padding:3px 10px;border-radius:4px;
-   background:var(--warn);color:#16181C;font-size:11px;font-weight:700;flex:none}
+   background:var(--warn);color:var(--ww-panel,#16181c);font-size:11px;
+   font-weight:700;flex:none}
  .add{display:flex;gap:6px;margin:6px 0 0}
  .add input{flex:1;background:var(--ww-btn,rgba(255,255,255,.08));color:var(--ink);border:1px solid var(--line);
    border-radius:4px;padding:6px 8px;font:13px inherit;box-sizing:border-box}
@@ -82,9 +86,10 @@
        flex:none;margin-left:10px}
  .w.hist .v{color:var(--dim)}
  .none{color:var(--dim);font-size:11.5px;margin:3px 0 0}
- .blind{margin:8px 0 0;padding:7px 9px;border-radius:4px;background:#33211A;
-   border:1px solid var(--warn);font-size:11.5px;display:none}
+ .blind{margin:8px 0 0;padding:7px 9px;border-radius:4px;background:transparent;
+   border:1px solid var(--warn);color:var(--ink);font-size:11.5px;display:none}
  .blind.on{display:block}
+ .blind b{color:var(--warn)}
  .tabs{display:flex;gap:14px;margin:14px 0 0;border-bottom:1px solid var(--line)}
  .tabs button{all:unset;cursor:pointer;padding:0 0 6px;font-size:11px;
    letter-spacing:.08em;text-transform:uppercase;color:var(--dim);font-weight:600;
@@ -94,7 +99,7 @@
 </style>
 
 <h1>唤醒词防火墙</h1>
-<p class="sub">✨ 让家里的智能音箱不再被评测视频意外唤醒<br>全程本地推理，不发一个网络请求</p>
+<p class="sub">✨ 让家里的智能音箱不再被评测视频意外唤醒<br>💻 全程本地运行，不产生网络通信</p>
 
 <div class="blind" id="blindnote"></div>
 

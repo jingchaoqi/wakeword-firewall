@@ -90,6 +90,29 @@ ms.addEventListener('sourceopen',async()=>{
     await chrome.storage.session.clear();
   });
 
+  // ── 0. 出厂词表能不能被引擎吃下 ──────────────────────────────────
+  // 下面的测试会把词表换成素材里那个词，e2e 也一样——所以**没有任何测试**
+  // 碰过随包发布的 keywords.txt。而「词表里混进引擎解析不了的东西导致检测器
+  // 起不来」正是这个项目踩过的坑（当时是整行注释）。往词表加词更要验这条。
+  // 这里不设 keywords，让内容脚本回落到内置词表，只看检测器起没起来。
+  {
+    const probe = await ctx.newPage();
+    const logs = [];
+    probe.on('console', (m) => logs.push(m.text()));
+    await probe.goto('http://127.0.0.1:8848/st.html');
+    await probe.waitForFunction(() => window.__appended === true, null, { timeout: 30000 })
+      .catch(() => {});
+    await probe.waitForFunction(
+      () => true, null, { timeout: 100 }).catch(() => {});
+    for (let i = 0; i < 60 && !logs.some(l => /检测器就绪|检测器启动失败/.test(l)); i++)
+      await probe.waitForTimeout(500);
+    const ready = logs.some(l => /检测器就绪/.test(l));
+    const failed = logs.filter(l => /检测器启动失败/.test(l));
+    push('出厂词表能被引擎加载（检测器起得来）', ready && !failed.length);
+    if (failed.length) console.log('  启动失败: ' + failed[0]);
+    await probe.close();
+  }
+
   // ── 1. 真播一遍，等命中 ──────────────────────────────────────────
   const page = await ctx.newPage();
   await page.goto('http://127.0.0.1:8848/st.html');
@@ -204,7 +227,7 @@ ms.addEventListener('sourceopen',async()=>{
   push('说明里不再暗示关掉就没提示',
     !pe.hints.some(h => /默认不弹|不必每次都被页面打断/.test(h)));
   push('顶部有产品标语', /让家里的智能音箱不再被评测视频意外唤醒/.test(pe.sub));
-  push('标语保留了「不发一个网络请求」', /不发一个网络请求/.test(pe.sub));
+  push('标语保留了「不产生网络通信」', /全程本地运行，不产生网络通信/.test(pe.sub));
   push('面板底部有 GitHub 链接', pe.gh === 'https://github.com/jingchaoqi/wakeword-firewall');
   push('两栏标题是「本页屏蔽统计 / 历史屏蔽统计」',
     JSON.stringify(pe.tabs) === JSON.stringify(['本页屏蔽统计', '历史屏蔽统计']));
@@ -259,6 +282,42 @@ ms.addEventListener('sourceopen',async()=>{
   }
   // 米白档绝不能用白字——这是这次改动最容易做错的地方
   push('月白档没有用浅色字', seen[0].fg !== '#e9e7e2' && seen[0].fg !== '#ffffff');
+
+  // 「本页不支持」那条提示：三档下都得读得清。
+  // 它以前写死了深色底 #33211A，而文字色跟着主题走——月白档下就是深底深字，
+  // 整段看不见。做成断言，别再靠肉眼发现。
+  await ext.evaluate(async () => {
+    const s = await chrome.storage.session.get('tabStats');
+    const all = s.tabStats || {};
+    all[-1] = { n: 0, words: {}, blind: 'drm' };
+    await chrome.storage.session.set({ tabStats: all });
+  });
+  for (const [i, name] of [[0, '月白'], [1, '烟霭'], [2, '玄墨']]) {
+    await pop.evaluate((v) => {
+      const o = document.getElementById('op');
+      o.value = String(v); o.dispatchEvent(new Event('input'));
+    }, i);
+    await pop.waitForTimeout(200);
+    const b = await pop.evaluate(() => {
+      const el = document.getElementById('blindnote');
+      el.classList.add('on');
+      el.textContent = '本页有内容挡不住：DRM 保护的内容，音频是密文，解不出来';
+      const cs = getComputedStyle(el);
+      const rgb = (c) => (c.match(/\d+/g) || []).slice(0, 3).map(Number);
+      const lum = (v) => { const x = v.map(n => { const c = n / 255;
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+        return 0.2126 * x[0] + 0.7152 * x[1] + 0.0722 * x[2]; };
+      // 背景是 transparent 时取面板底色，那才是肉眼看到的
+      let bg = rgb(cs.backgroundColor);
+      if (!bg.length || /rgba\(0, 0, 0, 0\)/.test(cs.backgroundColor))
+        bg = rgb(getComputedStyle(document.body).backgroundColor);
+      const a = lum(rgb(cs.color)), c = lum(bg);
+      return { contrast: (Math.max(a, c) + 0.05) / (Math.min(a, c) + 0.05),
+               bgDecl: cs.backgroundColor };
+    });
+    push(`${name}：不支持提示读得清（对比度 ${b.contrast.toFixed(1)}）`, b.contrast >= 4.5);
+    if (i === 0) push('不支持提示不再有自己的底色', /rgba\(0, 0, 0, 0\)/.test(b.bgDecl));
+  }
 
   // 强调色：挑一个跟玄墨底色撞的深色，应该被自动拉开
   await pop.evaluate(() => {
