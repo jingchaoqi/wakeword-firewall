@@ -469,10 +469,11 @@ git tag v0.1.0 && git push origin v0.1.0
 两者对不上 CI 会直接红掉——否则 Release 标题写着 v0.2.0、挂的文件却是
 `…-0.1.0.zip`、装进浏览器显示 0.1.0，而整条流水线一声不吭。
 
-> **手动触发（workflow_dispatch）拿到的包不一样**：网页上下载 Actions 产物时，
-> GitHub 会**再套一层 zip**，外层按 artifact 名命名。所以你会先解出一个
-> `wakeword-firewall-<版本>-<commit>.zip`，里面才是能装的
-> `wakeword-firewall-<版本>.zip`。Release 里的是直接上传的，没有这层壳。
+> **两条路拿到的东西不一样**：
+> `actions/upload-artifact` 总会把上传内容再打一层 zip，所以 Actions 产物传的是
+> **解包后的目录**——下载 `wakeword-firewall-<版本>-<commit>.zip`，解压一次就是
+> 能直接「加载已解压」的文件夹。Release 里挂的才是原封不动的
+> `wakeword-firewall-<版本>.zip`，那个是传应用商店用的。
 
 **实测耗时**：GitHub 的 `ubuntu-latest`（4 核）冷缓存从零编完整条链路 **7 分 39 秒**
 （含下 emsdk 工具链 356 MB、编 wasm、跑全套测试）。emsdk 和 sherpa 的构建走
