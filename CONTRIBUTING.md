@@ -11,6 +11,10 @@
 - [最需要帮忙的三件事](#最需要帮忙的三件事)
 - [先理解这个架构为什么长这样](#先理解这个架构为什么长这样)
 - [仓库结构](#仓库结构)
+- [数据存在哪](#数据存在哪)
+- [构建与发布](#构建与发布)
+- [Python 工具链（p0/）](#python-工具链p0)
+- [词表能覆盖到什么程度](#词表能覆盖到什么程度)
 - [开发环境](#开发环境)
 - [跑测试](#跑测试)
 - [两个已经踩过的坑](#两个已经踩过的坑)
@@ -18,8 +22,6 @@
 - [待办清单](#待办清单)
 - [提 Issue 之前](#提-issue-之前)
 - [提 PR 的约定](#提-pr-的约定)
-
----
 
 ## 项目现在在哪
 
@@ -204,6 +206,243 @@ build/                  辅助脚本
 没有跟着 `bootWorker()`——因为「本页挡不住」的信号可能比检测器起得还早
 （DRM 是 `setMediaKeys` 一调用就报），而 `enabled === false` 时 `bootWorker`
 直接 `return`，根本不会读配置。加新的 UI 开关时留意走哪条路。
+
+## 构建与发布
+
+README 面向使用者，只保留「一条命令」那一层。这里是完整细节。
+
+### 编译识别引擎
+
+**一条命令走完全流程**（编引擎 → 取模型和自检素材 → 打进包 → 出 zip），
+每一步都会跳过已经完成的：
+
+```bash
+./extension/tools/build-all.sh
+```
+
+只想把本地的 `extension/` 弄成可加载状态、不要 zip：`BUILD_ONLY=1 ./extension/tools/build-all.sh`
+
+下面是分步版，想看清楚每步在干什么再往下读。
+
+
+
+**这一步没有捷径，原因得说清楚：**
+
+k2-fsa 官方只为语音识别、语音合成、静音检测、说话人分离发布了浏览器版
+WebAssembly，**唯独没有关键词检测**（可核对 sherpa-onnx 仓库的
+`.github/workflows/wasm-simd-hf-space-*.yaml`，十个里没有 kws）。
+npm 包里那份是 `-sNODERAWFS=1` 构建的 Node 专用版，浏览器里一加载就抛
+`NODERAWFS is currently only supported on Node.js environment`。
+
+所以只能自己编一次。仓库里有脚本，一条命令：
+
+```bash
+./extension/vendor/build-wasm.sh
+```
+
+它会依次做四件事：装 emsdk 4.0.23（**别用其它版本**，sherpa 官方指定）、
+拉 sherpa-onnx、下载 KWS 模型放进构建目录、编译。
+
+> **CPU 核心少的机器**：脚本里的并行编译可能 OOM，把 `-j8` 调小再跑。
+>
+> **想把中间产物放别处**：`./extension/vendor/build-wasm.sh /path/to/workdir`，
+> 默认是 `~/ww-build`。
+
+编完产物在 `~/ww-build/sherpa-onnx/build-wasm-simd-kws/install/bin/wasm/`：
+
+```
+sherpa-onnx-wasm-kws-main.js
+sherpa-onnx-wasm-kws-main.wasm
+sherpa-onnx-wasm-kws-main.data     # 模型预加载包，可能有也可能没有
+```
+
+脚本最后会自动把这三个文件拷进 `extension/vendor/`。
+
+
+### 自检素材
+
+引导页第 2 步点**运行自检**。它在本地跑一遍完整的检测链路，确认引擎装对了、
+能正常识别。不用麦克风，不联网。
+
+界面上只会告诉你通过没通过——识别出的具体内容打在控制台里，页面上不显示。
+原因见下面那条注释：素材认的不是唤醒词，显示出来只会让人困惑。
+
+> **第一次跑要先准备自检素材**（仓库里不带二进制）：
+>
+> ```bash
+> ./extension/tools/fetch-models.sh
+> ```
+>
+> 它会从 sherpa-onnx 官方模型包（Apache-2.0，可再分发）取一段测试音频放到
+> `extension/assets/`，顺便把 `extension/models/` 也准备好（引擎不带 `.data`
+> 预加载包时要用）。这段音频认的是「文森特卡索」而不是唤醒词——自检要验的是
+> 引擎链路通不通，用哪个词无所谓。想换成自己录的「小爱同学」，替换
+> `selftest.wav` 并删掉同目录的 `selftest.json` 即可。
+
+
+### 打包与发版
+
+上面第 3、4 步对普通用户还是太重。如果你要把扩展分发出去，先把引擎打进包里，
+之后所有用户零配置：
+
+```bash
+# 把编好的引擎嵌进扩展包
+./extension/tools/embed-engine.sh ~/ww-build/sherpa-onnx/build-wasm-simd-kws/install/bin/wasm
+
+# 出 .zip（传应用商店 / 加载已解压）
+./extension/tools/pack.sh
+```
+
+`pack.sh` 会剔掉 `test/`、`tools/` 和所有 `.md`，产物默认落在仓库根目录的
+`dist/`。装扩展、传应用商店都只用这个 zip。
+
+引擎不在时它会**拒绝打包**并告诉你该跑什么。否则会产出一个看着正常、装上却
+完全不工作的 104 KB zip（干净 clone 之后直接跑就会踩到）。确实要打不含引擎的
+包用 `--allow-no-engine`。
+
+### 要出 .crx（只有企业策略部署才需要）
+
+crx 得用私钥签名，而**私钥决定扩展 ID**：换一把钥匙就等于换了一个扩展，
+用户装的旧版收不到更新、设置也全丢。所以 `pack.sh` 默认**不会**替你造钥匙，
+找不到就跳过 crx 并说明原因——默默生成一把随后丢掉，是这类脚本最坑人的行为
+（CI 上尤其如此，每次构建都会得到一个不同 ID 的 crx）。
+
+第一次生成，然后立刻把 `.pem` 挪到仓库外收好：
+
+```bash
+WW_NEW_KEY=1 ./extension/tools/pack.sh
+mv dist/*.pem ~/keys/wakeword-firewall.pem     # 放到仓库外
+```
+
+之后每次都指向同一把钥匙，扩展 ID 才稳定：
+
+```bash
+WW_CRX_KEY=~/keys/wakeword-firewall.pem ./extension/tools/pack.sh
+```
+
+> `.pem` 已经在 `.gitignore` 里，但别只依赖它——**丢了这把钥匙就再也发不出
+> 同 ID 的更新**，泄露了则别人能冒充你的扩展签名。
+
+**CI 也能出包**。仓库里带了一份现成的 workflow，装上即可：
+
+```bash
+mkdir -p .github/workflows
+cp build/github-actions-build.yml .github/workflows/build.yml
+git add .github/workflows/build.yml && git commit -m "加 CI 构建" && git push
+```
+
+（本仓库已经装好了，`build/` 那份留作备份和给 fork 的人用。）
+
+装上之后先**手动触发一次**（Actions 页 → 构建扩展包 → Run workflow）验证能跑通，
+zip 会挂在这一次运行的产物里。确认没问题再发正式版：
+
+```bash
+# tag 必须和 extension/manifest.json 的 version 一致，CI 会当场校验
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+推 tag 会触发同一个 workflow，编完自动建 Release 并把 zip 传上去，
+文件名是 `wakeword-firewall-<版本>.zip`。CI 只发 zip 不发 crx——
+签名私钥不该放在 CI 上，见上一节。
+
+发新版就是两步：改 `extension/manifest.json` 的 `version`，打同号的 tag。
+两者对不上 CI 会直接红掉——否则 Release 标题写着 v0.2.0、挂的文件却是
+`…-0.1.0.zip`、装进浏览器显示 0.1.0，而整条流水线一声不吭。
+
+> **两条路产出两样东西**，别搞混：
+>
+> | 触发 | 落在哪 | 文件名 | 解压后 |
+> |---|---|---|---|
+> | 手动 / PR | Actions 产物 | `wakeword-firewall-<版本>-<commit>.zip` | 直接是扩展目录，可「加载已解压」 |
+> | 推 tag | **Release 页面** | `wakeword-firewall-<版本>.zip` | 同上；这个也是传应用商店用的 |
+>
+> 名字不同是因为 `actions/upload-artifact` 总会把上传内容再打一层 zip、按
+> artifact 名命名，而 Release 是直接上传文件、不套壳。推 tag 那次两样都会有。
+
+**实测耗时**：GitHub 的 `ubuntu-latest`（4 核）冷缓存从零编完整条链路 **7 分 39 秒**
+（含下 emsdk 工具链 356 MB、编 wasm、跑全套测试）。emsdk 和 sherpa 的构建走
+`actions/cache`，命中后更快。本地机器慢一些，按 20–40 分钟准备。
+
+> 上架 Chrome 应用商店要注意：**MV3 禁止远程托管代码，wasm 也算**
+> （transformers.js 的官方示例就因此被驳回）。引擎必须内置，不能做成运行时下载。
+
+## Python 工具链（p0/）
+
+浏览器扩展之外，`p0/` 是一套纯 Python 的离线工具，用来扫描本地视频、
+批量测误报率、以及直接产出屏蔽后的视频文件。不用编译 WebAssembly。
+
+```bash
+git clone https://github.com/jingchaoqi/wakeword-firewall.git
+cd wakeword-firewall/p0
+./setup.sh          # 装 sherpa-onnx + numpy，下载模型（约 520 MB，来自 GitHub Releases）
+```
+
+> **520 MB 里有 487 MB 是二级复核用的 ASR 模型**（一级 KWS 模型只有 31 MB）。
+> 只想快速看看认不认得出，可以 Ctrl-C 掉第二个下载，然后所有命令都加 `--no-verify`
+> ——那条路只用 KWS，不碰 ASR。解压后占盘约 570 MB。
+
+`setup.sh` 会检查 `ffmpeg` 是否存在。没有的话：
+
+```bash
+sudo apt install ffmpeg      # Debian / Ubuntu
+brew install ffmpeg          # macOS
+```
+
+**扫描一个视频，看看里面有没有唤醒词、在第几秒：**
+
+```bash
+python3 scan.py 你的视频.mp4
+```
+
+输出长这样：
+
+```
+▸ 你的视频.mp4  [11.6s 音频, 扫描 0.6s = 21x 实时]  1 处命中
+    1.80s  「小爱同学」  ✓已复核
+             静音 0.49–1.69s (1.20s)  精确区间 0.49–1.69s
+             上下文: …小爱同学，打开卧室灯…
+```
+
+常用参数：
+
+```bash
+python3 scan.py 视频目录/                  # 批量扫一个目录
+python3 scan.py 视频.mp4 --no-verify       # 只跑一级 KWS，最快
+python3 scan.py 视频.mp4 --threshold 0.45  # 收紧阈值，减少误报
+python3 scan.py 视频.mp4 --json out.json   # 机器可读输出
+```
+
+**直接产出屏蔽后的视频：**
+
+```bash
+python3 mute.py 输入.mp4 -o 输出.mp4
+```
+
+这一步会完整跑一遍扩展里预扫描要做的事——一级 KWS 找候选、全片 ASR 转写 +
+拼音模糊匹配捞近音变体、两路结果合并、按时间戳给音频加增益包络
+（10 ms 升降沿防爆音），视频流原样复制。
+
+
+## 词表能覆盖到什么程度
+
+模型的 token 表是普通话的 194 个声母 + 带声调韵母，覆盖 1339 种音节。
+
+- ✅ 中文唤醒词都没问题：小爱同学 / 天猫精灵 / 小度小度 / 你好问问 / 叮咚叮咚 / 若琪
+- ❌ **外语唤醒词加不了**：`Hey Siri`、`OK Google`、`Alexa` —— 拼音表里没有拉丁字母
+- ❌ 方言、外来音同理
+
+CJK 基本区 20902 个汉字里，转不出来的只有 62 个：
+
+```
+乼兙兡兯呣哘嗧嚡垊壭夐尡忄恷慐懳抣掵掹揼敻桛椦橵橺櫵欟氞氵潈瀮炞烪焸煷燝爳
+瓧瓰瓱瓼甅硘穃穝籖粌粏繧罀脌螁螩裄詗诇鎆鏲鑦閖鮘鵤
+```
+
+全是和制汉字、偏旁部首（氵、忄）和生僻异体字，没有一个是能说出口的词。
+
+
+词条数量不是瓶颈：实测 1 条和 1001 条的推理速度没有差别——词表在运行时
+编译成前缀树去匹配解码格，跟条数基本无关。也因此**换词不需要重新训练模型**。
 
 ## 开发环境
 
