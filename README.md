@@ -144,9 +144,11 @@ cd wakeword-firewall
 
 > 现在扩展还不能工作——检测引擎还没有。引导页第 1 步会显示「未检测到引擎」。
 
-> **不想自己编？** [Releases](https://github.com/jingchaoqi/wakeword-firewall/releases)
-> 里的 zip 引擎已内置，下载解压就能加载，跳过第 3–5 步。
-> 那个包由 GitHub Actions 编出来，流程和下面完全一致。
+> **不想自己编？** 一旦
+> [Releases](https://github.com/jingchaoqi/wakeword-firewall/releases) 页上有包，
+> 那里的 zip 引擎已内置，下载解压就能加载，可以跳过第 3–5 步。
+> **目前还没有发布过 Release**，所以现在只能按下面的步骤自己编一次；
+> 出包的 CI 已经写好，见[打包分发给别人](#打包分发给别人)。
 
 ### 第 3 步 · 编检测引擎（20–40 分钟，一次性）
 
@@ -406,9 +408,16 @@ git add .github/workflows/build.yml && git commit -m "加 CI 构建" && git push
 （放在 `build/` 而不是直接就位，是因为创建 workflow 需要 token 的 `workflow`
 权限，当初协助提交的会话没有。）
 
-装上之后：打 `v*` tag 自动编译并发 Release，手动触发（workflow_dispatch）
-则把 zip 挂在 Actions 产物里。emsdk 和 sherpa 的构建走 `actions/cache`，
-命中时几分钟就能出包。
+装上之后先**手动触发一次**（Actions 页 → 构建扩展包 → Run workflow）验证能跑通，
+zip 会挂在这一次运行的产物里。确认没问题再发正式版：
+
+```bash
+# 版本号跟 extension/manifest.json 里的 version 对齐
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+推 tag 会触发同一个 workflow，编完自动建 Release 并把 zip 传上去。
+emsdk 和 sherpa 的构建走 `actions/cache`，首次约 40 分钟，之后命中缓存几分钟就好。
 
 > 上架 Chrome 应用商店要注意：**MV3 禁止远程托管代码，wasm 也算**
 > （transformers.js 的官方示例就因此被驳回）。引擎必须内置，不能做成运行时下载。
