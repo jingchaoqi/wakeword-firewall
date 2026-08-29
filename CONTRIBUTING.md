@@ -115,7 +115,7 @@ extension/              Chrome MV3 扩展本体
     background.js       安装即开引导页；按需创建 offscreen；按标签页/按词记账与徽标
     popup.html/js       设置面板：本页/历史的按词统计、总开关、静音时长、
                         两个提示开关、外观、词表编辑
-    theme.js            外观：背景色 + 透明度，文字色按亮度自动推。
+    theme.js            外观：三档主题（月白/烟霭/玄墨）+ 用户自选强调色。
                         提示条和面板共用，所以它同时是内容脚本和扩展页脚本
     welcome.html/js     安装引导页（自动检测 / 拖拽装引擎 / 自检）
     text2token.js       中文 → 模型 token 序列（让用户能直接输中文加词）
@@ -178,7 +178,7 @@ build/                  辅助脚本
 
 | 键 | 存哪 | 活多久 | 内容 |
 |---|---|---|---|
-| `keywords` `enabled` `muteTail` `showBanner` `showBlind` `uiBg` `uiOpacity` | `storage.local` | 永久 | 用户设置，面板里能改 |
+| `keywords` `enabled` `muteTail` `showBanner` `showBlind` `uiTheme` `uiAccent` | `storage.local` | 永久 | 用户设置，面板里能改 |
 | `score` `threshold` `muteLead` | `storage.local` | 永久 | 全局灵敏度，**没有 UI**，只能从控制台设（默认 2.0 / 0.25 / 1.55）|
 | `statsAll` | `storage.local` | 永久 | 历史累计 `{words:{词:次数}, total, since}` |
 | `tabStats` | `storage.**session**` | 到浏览器关闭 | 按标签页 `{[tabId]:{n, words, blind}}` |
@@ -191,8 +191,14 @@ build/                  辅助脚本
 所以按标签页的账走 `storage.session`：SW 重启后能接着数，浏览器关掉才清。
 
 **「恢复默认」删键，不写默认值。** 外观那个按钮走的是
-`storage.local.remove(['uiBg','uiOpacity'])`。写回当前默认值的话，以后调整
+`storage.local.remove(['uiTheme','uiAccent'])`。写回当前默认值的话，以后调整
 默认配色，那些点过「恢复默认」的用户会被永久钉在旧值上。
+
+**外观只给三档，不给连续调节。** 试过做「透明度百分比」，中间那段落在中性灰上
+——那正是对比度最差的区域，浅色字和深色字都够不到 WCAG AA。与其让用户自己踩进去，
+不如只给三个都配好的档位。每档的文字色是写死的，不是从底色现算：现算能保证对比度，
+保证不了好看（暖米白配纯黑就很硬）。只有强调色是用户挑的，那个才现算——
+撞底色时自动拉开，见 `ensureContrast`。
 
 **读设置的时机比想象中早。** `content.js` 里 `showBlind` 是在模块顶层单独读的，
 没有跟着 `bootWorker()`——因为「本页挡不住」的信号可能比检测器起得还早

@@ -194,54 +194,83 @@ ms.addEventListener('sourceopen',async()=>{
   push('去掉了「本页已屏蔽 / 监听中的音频轨」两行', pe.rows === 0);
 
   // ── 6. 外观：改了要即时生效，且能一键恢复 ────────────────────────
-  const skin0 = await pop.evaluate(() => ({
-    op: document.getElementById('op').value,
-    bg: document.getElementById('bg').value,
-    rootBg: getComputedStyle(document.documentElement).getPropertyValue('--ww-bg').trim(),
-  }));
-  push('外观控件读到了默认值', skin0.bg === '#16181c' && Number(skin0.op) === 0.95);
-
-  // 选一个浅色背景，文字色该自动翻成深色
-  await pop.evaluate(() => {
-    const b = document.getElementById('bg');
-    b.value = '#ffffff'; b.dispatchEvent(new Event('input'));
-    const o = document.getElementById('op');
-    o.value = '0.5'; o.dispatchEvent(new Event('input'));
-  });
-  await pop.waitForTimeout(400);
-  const skin1 = await pop.evaluate(() => {
+  const readSkin = () => pop.evaluate(() => {
     const cs = getComputedStyle(document.documentElement);
     return {
-      bg: cs.getPropertyValue('--ww-bg').trim(),
+      idx: document.getElementById('op').value,
+      label: document.getElementById('opv').textContent.trim(),
+      accentInput: document.getElementById('bg').value,
+      panel: cs.getPropertyValue('--ww-panel').trim(),
       fg: cs.getPropertyValue('--ww-fg').trim(),
-      op: cs.getPropertyValue('--ww-op').trim(),
-      label: document.getElementById('opv').textContent,
+      accent: cs.getPropertyValue('--ww-accent').trim(),
+      ticks: [...document.querySelectorAll('.ticks span')].map(e => e.textContent.trim()),
     };
   });
-  push('换背景色即时生效', skin1.bg === '#ffffff');
-  push('浅底自动换成深色文字（不会调出看不清的配色）', skin1.fg === '#1a1c20');
-  push('透明度即时生效', skin1.op === '0.5' && skin1.label === '50%');
 
+  const skin0 = await readSkin();
+  push('默认是玄墨档', skin0.label === '玄墨' && skin0.idx === '2');
+  push('默认强调色是青绿', skin0.accentInput === '#5cbdb5');
+  push('三档的名字都在', JSON.stringify(skin0.ticks) === JSON.stringify(['月白', '烟霭', '玄墨']));
+  push('底色是纯色，不再是半透明', /^#|^rgb\(/.test(skin0.panel) && !/rgba/.test(skin0.panel));
+
+  // 逐档切过去，每档都要保证文字读得出来
+  const seen = [];
+  for (const [i, want] of [[0, '月白'], [1, '烟霭'], [2, '玄墨']]) {
+    await pop.evaluate((v) => {
+      const o = document.getElementById('op');
+      o.value = String(v); o.dispatchEvent(new Event('input'));
+    }, i);
+    await pop.waitForTimeout(250);
+    const k = await readSkin();
+    const c = await pop.evaluate(([fg, bg]) => {
+      const lum = (h) => {
+        const v = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255)
+          .map(x => x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4));
+        return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
+      };
+      const a = lum(fg), b = lum(bg);
+      return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    }, [k.fg, k.panel]);
+    seen.push({ name: k.label, fg: k.fg, bg: k.panel, contrast: +c.toFixed(1) });
+    push(`${want}：档名对得上`, k.label === want);
+    push(`${want}：文字对比度达到 WCAG AA（实测 ${c.toFixed(1)}）`, c >= 4.5);
+  }
+  // 米白档绝不能用白字——这是这次改动最容易做错的地方
+  push('月白档没有用浅色字', seen[0].fg !== '#e9e7e2' && seen[0].fg !== '#ffffff');
+
+  // 强调色：挑一个跟玄墨底色撞的深色，应该被自动拉开
+  await pop.evaluate(() => {
+    const b = document.getElementById('bg');
+    b.value = '#16181c'; b.dispatchEvent(new Event('input'));
+  });
+  await pop.waitForTimeout(300);
+  const clash = await readSkin();
+  push('强调色撞底色时自动拉开', clash.accent !== '#16181c');
+
+  await pop.evaluate(() => {
+    const b = document.getElementById('bg');
+    b.value = '#e06c9f'; b.dispatchEvent(new Event('input'));
+  });
+  await pop.waitForTimeout(300);
   const persisted = await ext.evaluate(async () =>
-    await chrome.storage.local.get(['uiBg', 'uiOpacity']));
-  push('外观设置存下来了', persisted.uiBg === '#ffffff' && persisted.uiOpacity === 0.5);
+    await chrome.storage.local.get(['uiAccent', 'uiTheme']));
+  push('外观设置存下来了', persisted.uiAccent === '#e06c9f' && persisted.uiTheme === 'ink');
 
   await pop.click('#skinreset');
   await pop.waitForTimeout(400);
-  const skin2 = await pop.evaluate(() => ({
-    bg: getComputedStyle(document.documentElement).getPropertyValue('--ww-bg').trim(),
-    op: document.getElementById('op').value,
-  }));
-  push('一键恢复默认', skin2.bg === '#16181c' && Number(skin2.op) === 0.95);
+  const skin2 = await readSkin();
+  push('一键恢复默认', skin2.accentInput === '#5cbdb5' && skin2.label === '玄墨');
   const cleared = await ext.evaluate(async () =>
-    Object.keys(await chrome.storage.local.get(['uiBg', 'uiOpacity'])).length);
+    Object.keys(await chrome.storage.local.get(['uiAccent', 'uiTheme'])).length);
   push('恢复默认是删键而不是写死值', cleared === 0);
+  console.log('\n  三档实测: ' + seen.map(s =>
+    `${s.name} ${s.bg}/${s.fg} 对比度 ${s.contrast}`).join('  |  '));
 
   // ── 7. 外观要真的传到页面上那条提示条 ────────────────────────────
   // 面板里改完就该生效，不用刷新页面——这才是这个功能的用处所在。
   // 只验面板自己会变的话，等于没验。
   await ext.evaluate(async () =>
-    chrome.storage.local.set({ uiBg: '#ffffff', uiOpacity: 0.6, showBlind: true }));
+    chrome.storage.local.set({ uiAccent: '#e06c9f', uiTheme: 'cream', showBlind: true }));
   const drm3 = await ctx.newPage();
   await drm3.goto('http://127.0.0.1:8848/drm.html');
   await drm3.waitForFunction(() => window.__drmDone === true, null, { timeout: 15000 }).catch(() => {});
@@ -252,13 +281,13 @@ ms.addEventListener('sourceopen',async()=>{
     const cs = getComputedStyle(el);
     return { bg: cs.backgroundColor, color: cs.color, opacity: cs.opacity };
   });
-  push('提示条用上了用户选的背景色', !!bn && bn.bg === 'rgb(255, 255, 255)');
-  push('提示条文字跟着翻成深色', !!bn && bn.color === 'rgb(26, 28, 32)');
-  push('提示条用上了用户设的透明度', !!bn && Math.abs(Number(bn.opacity) - 0.6) < 0.01);
+  // 提示条要跟着主题走，而且文字得跟着翻——米白底配白字就是这个功能的失败态
+  push('提示条用上了选中的主题底色', !!bn && bn.bg === 'rgb(245, 241, 232)');
+  push('米白主题下提示条文字是深色', !!bn && bn.color === 'rgb(42, 38, 30)');
   if (bn) await drm3.screenshot({ path: '/tmp/ww-banner-custom.png' });
 
   // 改回默认，确认也是即时的（内容脚本监听 onChanged，不是只在启动时读一次）
-  await ext.evaluate(async () => chrome.storage.local.remove(['uiBg', 'uiOpacity']));
+  await ext.evaluate(async () => chrome.storage.local.remove(['uiAccent', 'uiTheme']));
   await drm3.waitForTimeout(800);
   const bn2 = await drm3.evaluate(() => {
     const el = document.querySelector('.ww-banner');

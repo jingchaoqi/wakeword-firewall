@@ -86,7 +86,7 @@ $('tabhist').onclick = () => selectTab('hist');
   } catch { /* 这个页面没有内容脚本，比如 chrome:// 页 */ }
 
   const cfg = await chrome.storage.local.get(
-    ['keywords', 'enabled', 'muteTail', 'showBanner', 'showBlind', 'uiBg', 'uiOpacity']);
+    ['keywords', 'enabled', 'muteTail', 'showBanner', 'showBlind', 'uiAccent', 'uiTheme']);
   $('kw').value = cfg.keywords ||
     await fetch(chrome.runtime.getURL('keywords.txt')).then(r => r.text());
   if (cfg.enabled === false) $('on').checked = false;
@@ -95,7 +95,7 @@ $('tabhist').onclick = () => selectTab('hist');
   paintBanner();
   // 默认关，见 content.js 里那段注释：图标角上的叹号已经在说这件事了
   $('blind').checked = cfg.showBlind === true;
-  paintSkin({ uiBg: cfg.uiBg, uiOpacity: cfg.uiOpacity });
+  paintSkin({ uiAccent: cfg.uiAccent, uiTheme: cfg.uiTheme });
   paint(cfg.muteTail ?? 0.3);
 })();
 
@@ -179,14 +179,16 @@ const TH = window.WWTheme;
 
 function paintSkin(cfg) {
   const p = TH.applyTo(document.documentElement, cfg);
-  const op = TH.clampOpacity(cfg && cfg.uiOpacity);
-  $('op').value = op;
-  $('opv').textContent = Math.round(op * 100) + '%';
-  $('bg').value = p.bg;
+  $('op').value = String(TH.ORDER.indexOf(p.key));
+  $('opv').textContent = p.name;
+  $('bg').value = TH.normHex(cfg && cfg.uiAccent);
 }
 
 function saveSkin() {
-  const v = { uiBg: TH.normHex($('bg').value), uiOpacity: TH.clampOpacity($('op').value) };
+  const v = {
+    uiAccent: TH.normHex($('bg').value),
+    uiTheme: TH.ORDER[Number($('op').value)] || TH.DEFAULTS.uiTheme,
+  };
   paintSkin(v);
   chrome.storage.local.set(v);
 }
@@ -195,7 +197,7 @@ $('bg').oninput = saveSkin;
 
 $('skinreset').onclick = async () => {
   // 删掉键而不是写回默认值：默认值以后要是调了，用户不用再点一次「恢复默认」
-  await chrome.storage.local.remove(['uiBg', 'uiOpacity']);
+  await chrome.storage.local.remove(['uiAccent', 'uiTheme']);
   paintSkin({});
 };
 

@@ -30,11 +30,11 @@ let showBanner = true;
 let showBlind = false;
 let theme = null;                       // 外观设置，提示条建出来时套上去
 const uiCfg = chrome.storage.local.get(
-  ['showBanner', 'showBlind', 'uiBg', 'uiOpacity'])
+  ['showBanner', 'showBlind', 'uiAccent', 'uiTheme'])
   .then((c) => {
     showBanner = c.showBanner !== false;
     showBlind = c.showBlind === true;
-    theme = { uiBg: c.uiBg, uiOpacity: c.uiOpacity };
+    theme = { uiAccent: c.uiAccent, uiTheme: c.uiTheme };
     if (bannerEl) self.WWTheme.applyTo(bannerEl, theme);
   })
   .catch(() => {});
@@ -136,10 +136,10 @@ chrome.storage.onChanged.addListener((ch, area) => {
   if (ch.showBanner) showBanner = ch.showBanner.newValue !== false;
   if (ch.showBlind) showBlind = ch.showBlind.newValue === true;
   // 外观改了立刻生效，不用刷新——面板里拖滑块时能直接看到页面上的提示条在变
-  if (ch.uiBg || ch.uiOpacity) {
+  if (ch.uiAccent || ch.uiTheme) {
     theme = {
-      uiBg: ch.uiBg ? ch.uiBg.newValue : (theme && theme.uiBg),
-      uiOpacity: ch.uiOpacity ? ch.uiOpacity.newValue : (theme && theme.uiOpacity),
+      uiAccent: ch.uiAccent ? ch.uiAccent.newValue : (theme && theme.uiAccent),
+      uiTheme: ch.uiTheme ? ch.uiTheme.newValue : (theme && theme.uiTheme),
     };
     if (bannerEl) self.WWTheme.applyTo(bannerEl, theme);
   }
