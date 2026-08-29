@@ -128,9 +128,15 @@ ms.addEventListener('sourceopen',async()=>{
   const cfg = await ctx.newPage();
   await cfg.goto(`chrome-extension://${id}/src/welcome.html`);
   const wantBanner = process.env.WW_NO_BANNER ? false : true;
+  // 故意带上整行注释——设置面板保存下来的就长这样（文本框里是 keywords.txt
+  // 原文，连头三行注释一起存回 storage）。引擎按 `#` 切阈值，整行注释会让它
+  // stof 抛异常；这行注释在这里就是那个 bug 的回归防线，别"顺手清理掉"。
+  const kwWithComments = '# 唤醒词表 —— 每行: <拼音 token 序列> @<显示名>\n' +
+                         '# 可加 :score 调加权、#threshold 调单词阈值\n' +
+                         META.keywords;
   await cfg.evaluate(async ([kw, sb]) => {
     await chrome.storage.local.set({ keywords: kw, enabled: true, showBanner: sb });
-  }, [META.keywords, wantBanner]);
+  }, [kwWithComments, wantBanner]);
   await cfg.close();
   console.log(`词表已设为: ${META.keywords}（期望认出「${META.expect}」）`);
 
@@ -155,8 +161,12 @@ ms.addEventListener('sourceopen',async()=>{
   // 上面那些日志只能证明「排了程」。这里读增益节点的实际采样值，
   // 确认播到静音区间时增益真的掉到 0、出了区间又回到 1。
   // 提示条开关：命中时页面上该不该出现 .ww-banner
-  const bannerSeen = await page.evaluate(() =>
-    !!document.querySelector('.ww-banner'));
+  // 只认「命中」那条，不能光看 .ww-banner 在不在——失败提示用的是同一个类名，
+  // 检测器起不来时它照样在，断言就变成了永远通过。
+  const bannerSeen = await page.evaluate(() => {
+    const b = document.querySelector('.ww-banner');
+    return !!b && /已屏蔽唤醒词/.test(b.textContent || '');
+  });
   console.log(`提示条: 期望${wantBanner ? '出现' : '不出现'} / 实际${bannerSeen ? '出现' : '不出现'}`
     + (bannerSeen === wantBanner ? ' ✅' : ' ❌'));
 

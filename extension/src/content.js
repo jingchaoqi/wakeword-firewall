@@ -48,7 +48,12 @@ async function bootWorker() {
     // 宿主拿不到 chrome.storage，配置在这边读好一起送过去
     const kwFile = await fetch(BASE + 'keywords.txt').then(r => r.text());
     const detCfg = {
-      keywords: (cfg.keywords && cfg.keywords.trim()) ? cfg.keywords : stripComments(kwFile),
+      // 两边都要 stripComments：用户在设置面板里存下的那份是**连注释一起**存的
+      // （面板加载时把 keywords.txt 原样灌进文本框，加完词点保存就整份存回去）。
+      // 引擎按 `#` 切单词阈值，`# 唤醒词表 ——` 这种整行注释会让它 stof 抛异常，
+      // 检测器直接起不来——而自检页读的是内置文件，照样显示通过。实测踩过。
+      keywords: stripComments(
+        (cfg.keywords && cfg.keywords.trim()) ? cfg.keywords : kwFile),
       score: cfg.score ?? 2.0,
       threshold: cfg.threshold ?? 0.25,
       hitLead: cfg.muteLead ?? 1.55,
