@@ -112,9 +112,9 @@ extension/              Chrome MV3 扩展本体
     engine-loader.js    引擎加载：优先包内，其次用户自装
     engine-store.js     引擎存储（chrome.storage.local + base64）
     offscreen.html/js   ★ 检测宿主：扩展源，绕开页面 CSP，多标签页共用一个 wasm
-    background.js       安装即开引导页；按需创建 offscreen；统计与徽标
+    background.js       安装即开引导页；按需创建 offscreen；按标签页/按词记账与徽标
     popup.html/js       设置面板：总开关、静音时长、词表编辑
-    welcome.html/js     安装引导页（自动检测 / 拖拽装引擎 / 自检 / 站点探测）
+    welcome.html/js     安装引导页（自动检测 / 拖拽装引擎 / 自检）
     text2token.js       中文 → 模型 token 序列（让用户能直接输中文加词）
     pinyin-data.js      上面那个的数据（20840 字 / 72KB），由 build/ 的脚本生成
     node-shim.js        给 npm 版胶水补的 require("path") 垫片
@@ -134,6 +134,7 @@ extension/              Chrome MV3 扩展本体
     text2token-test.js  中文转 token 单测（31 项，纯 Node，不用浏览器）
     bundled-test.js     引导页：引擎已内置时该自动判定通过
     onboarding-test.js  引导页：引擎未装时该说清楚差什么（自己造这个场景）
+    stats-test.js       统计与徽标：按词计数、换页清零、DRM 出叹号（16 项）
     util.js             找浏览器 / 造素材 / 起静态服务
   package.json          只声明测试依赖（playwright）；扩展本身不需要 npm
 

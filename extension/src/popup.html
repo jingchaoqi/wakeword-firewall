@@ -44,6 +44,22 @@
  .add button:disabled{background:#2A2E33;color:var(--dim);cursor:default}
  .addmsg{font-size:11.5px;margin:6px 0 0;line-height:1.5;min-height:1em}
  .addmsg.ok{color:var(--sig)} .addmsg.bad{color:var(--warn)}
+ .words{margin:2px 0 0}
+ .w{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0;
+    font-size:12px}
+ .w .k{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .w .v{font-variant-numeric:tabular-nums;color:var(--sig);font-weight:600;
+       flex:none;margin-left:10px}
+ .w.hist .v{color:var(--dim)}
+ .none{color:var(--dim);font-size:11.5px;margin:3px 0 0}
+ .blind{margin:8px 0 0;padding:7px 9px;border-radius:4px;background:#33211A;
+   border:1px solid var(--warn);font-size:11.5px;display:none}
+ .blind.on{display:block}
+ .tabs{display:flex;gap:14px;margin:14px 0 0;border-bottom:1px solid var(--line)}
+ .tabs button{all:unset;cursor:pointer;padding:0 0 6px;font-size:11px;
+   letter-spacing:.08em;text-transform:uppercase;color:var(--dim);font-weight:600;
+   border-bottom:2px solid transparent;margin-bottom:-1px}
+ .tabs button.on{color:var(--sig);border-bottom-color:var(--sig)}
  .addmsg code{font:11px ui-monospace,monospace;color:var(--dim)}
 </style>
 
@@ -53,12 +69,23 @@
 <div class="row"><span>本页已屏蔽</span><span class="n" id="c">–</span></div>
 <div class="row"><span>监听中的音频轨</span><span class="n" id="t">–</span></div>
 
+<div class="blind" id="blindnote"></div>
+
+<div class="tabs">
+  <button id="tabpage" class="on">本页</button>
+  <button id="tabhist">历史累计</button>
+</div>
+<div class="words" id="words"></div>
+
 <label class="sw"><input type="checkbox" id="on" checked> 启用防护</label>
 <div class="notice" id="reload">
   <span id="reloadtext"></span><button id="doreload">刷新页面</button>
 </div>
 <label class="sw"><input type="checkbox" id="banner" checked> 拦截时显示悬浮提示</label>
 <p class="hint" id="bannerhint"></p>
+
+<label class="sw"><input type="checkbox" id="blind"> 本页挡不住时，页面上也提示</label>
+<p class="hint" id="blindhint"></p>
 
 <h2>静音时长</h2>
 <div class="slider">
@@ -83,7 +110,6 @@
 
 <div class="foot">
   <a class="link" id="guide">安装引导 / 自检</a>
-  <a class="link" id="probe" title="检查这个站点抓不抓得到音频">兼容性探测</a>
 </div>
 
 <script src="pinyin-data.js"></script>

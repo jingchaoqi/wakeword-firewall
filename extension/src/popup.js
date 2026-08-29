@@ -16,22 +16,86 @@ function paint(v) {
     b.classList.toggle('on', Math.abs(+b.dataset.v - v) < 0.05);
 }
 
+// ── 按词的统计 ──────────────────────────────────────────────────────
+// 本页的数来自 background（它按标签页记账，存 storage.session，
+// service worker 被回收也不丢）；历史累计存 storage.local，跨会话保留。
+let stats = { tab: { n: 0, words: {}, blind: null }, hist: { words: {}, total: 0 } };
+let which = 'page';
+
+const BLIND_WHY = {
+  'worker-mse': '播放器把 MediaSource 放在 Worker 里，抓不到音频数据',
+  'drm': 'DRM 保护的内容，音频是密文，解不出来',
+};
+
+function paintWords() {
+  const src = which === 'page' ? stats.tab.words : stats.hist.words;
+  const rows = Object.entries(src || {}).sort((a, b) => b[1] - a[1]);
+  const box = $('words');
+  box.textContent = '';
+  if (!rows.length) {
+    const p = document.createElement('p');
+    p.className = 'none';
+    p.textContent = which === 'page'
+      ? '这一页还没拦到唤醒词。' : '还没有拦到过唤醒词。';
+    box.appendChild(p);
+    return;
+  }
+  for (const [w, n] of rows) {
+    const d = document.createElement('div');
+    d.className = 'w' + (which === 'hist' ? ' hist' : '');
+    const k = document.createElement('span');
+    k.className = 'k'; k.textContent = w; k.title = w;
+    const v = document.createElement('span');
+    v.className = 'v'; v.textContent = n + ' 次';
+    d.append(k, v);
+    box.appendChild(d);
+  }
+}
+
+function selectTab(w) {
+  which = w;
+  $('tabpage').classList.toggle('on', w === 'page');
+  $('tabhist').classList.toggle('on', w === 'hist');
+  paintWords();
+}
+$('tabpage').onclick = () => selectTab('page');
+$('tabhist').onclick = () => selectTab('hist');
+
 (async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  // 本页计数以 background 为准：内容脚本那份是它自己的内存，
+  // 而 background 记的账才是徽标显示的那个数，两处得一致。
+  try {
+    stats = await chrome.runtime.sendMessage({ type: 'stats', tabId: tab.id }) || stats;
+  } catch { /* SW 还没起来 */ }
+  $('c').textContent = stats.tab.n;
+  paintWords();
+
+  if (stats.tab.blind) {
+    $('blindnote').classList.add('on');
+    $('blindnote').textContent = '本页有内容挡不住：' +
+      (BLIND_WHY[stats.tab.blind] ||
+       ('Chrome 解不了这个音频编码（' + String(stats.tab.blind).replace('codec:', '') + '）'));
+  }
+
   try {
     const s = await chrome.tabs.sendMessage(tab.id, { type: 'stats' });
-    $('c').textContent = s.muteCount; $('t').textContent = s.tracks;
+    $('t').textContent = s.tracks;
     $('on').checked = s.enabled;
-  } catch { $('c').textContent = '–'; $('t').textContent = '–'; }
+  } catch { $('t').textContent = '–'; }
 
   const cfg = await chrome.storage.local.get(
-    ['keywords', 'enabled', 'muteTail', 'showBanner']);
+    ['keywords', 'enabled', 'muteTail', 'showBanner', 'showBlind']);
   $('kw').value = cfg.keywords ||
     await fetch(chrome.runtime.getURL('keywords.txt')).then(r => r.text());
   if (cfg.enabled === false) $('on').checked = false;
   // 默认开：第一次用的人需要看到「它真的在工作」，否则会以为没生效
   $('banner').checked = cfg.showBanner !== false;
   paintBanner();
+  // 默认关，见 content.js 里那段注释：图标角上的叹号已经在说这件事了
+  $('blind').checked = cfg.showBlind === true;
+  paintBlind();
   paint(cfg.muteTail ?? 0.3);
 })();
 
@@ -108,9 +172,17 @@ $('guide').onclick = () => {
   window.close();
 };
 
-$('probe').onclick = () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome.html') + '#probe' });
-  window.close();
+function paintBlind() {
+  $('blindhint').innerHTML = $('blind').checked
+    ? 'DRM 内容、Worker 里的播放器、Chrome 解不了的音轨——这几类本来就挡不住，' +
+      '遇到时在页面上也弹一条说明。'
+    : '默认不弹。<b>工具栏图标角上会出现 <code>!</code></b>，' +
+      '够你看出这一页没护住了，不必每次都被页面打断。';
+}
+
+$('blind').onchange = async () => {
+  await chrome.storage.local.set({ showBlind: $('blind').checked });
+  paintBlind();
 };
 
 function paintBanner() {

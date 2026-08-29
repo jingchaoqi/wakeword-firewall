@@ -20,8 +20,21 @@ let port = null, ready = false, booting = false, enabled = true;
 // 命中时弹不弹提示。只管「已屏蔽 XXX」那一条——
 // 失败类提示（抓不到音频、检测器起不来）不受它控制，那些是必须让人知道的。
 let showBanner = true;
+// 「本页挡不住」那条提示的开关。它必须**独立于 bootWorker** 读：
+// 失明信号可能比检测器起得还早（DRM 是 setMediaKeys 一调用就报），
+// 而 enabled=false 时 bootWorker 直接 return，根本读不到配置——
+// 跟着 bootWorker 走的话，这个开关在 DRM 页上等于没有。
+// 默认**关**：挡不住这件事已经由工具栏图标角上的叹号在说了，页面上再弹一条
+// 就是重复打扰——而 DRM 站（Netflix 等）每次进都会触发，很烦。想要页面提示
+// 的人去设置面板打开。注意这跟「静默失效」是两回事：徽标始终会变。
+let showBlind = false;
+const uiCfg = chrome.storage.local.get(['showBanner', 'showBlind'])
+  .then((c) => { showBanner = c.showBanner !== false; showBlind = c.showBlind === true; })
+  .catch(() => {});
 const queue = [];
 const spansBySb = new Map();
+const wordBySpan = new Map();
+const spanKey = (sp) => sp[0].toFixed(3) + ':' + sp[1].toFixed(3);
 let muteCount = 0, pcmCount = 0;
 
 // ---------------------------------------------------------------- Worker
@@ -88,6 +101,9 @@ function onWorkerMessage(e) {
     const list = spansBySb.get(m.sbId) || [];
     list.push(m.span);
     spansBySb.set(m.sbId, list);
+    // 统计要按词分。命中消息带着词，而「真的静音了」是 MAIN world 那边
+    // 播到时才报的另一条消息，只带 span——用 span 把两者对起来。
+    wordBySpan.set(spanKey(m.span), m.keyword);
     toPage({ type: 'ww:timeline', sbId: m.sbId, spans: list });
     muteCount++;
     L(`命中「${m.keyword}」→ 静音 ${m.span[0].toFixed(2)}–${m.span[1].toFixed(2)}s`);
@@ -109,8 +125,9 @@ function onWorkerMessage(e) {
 // 设置改动立即下发，不用刷新页面（对后续命中生效）
 chrome.storage.onChanged.addListener((ch, area) => {
   if (area !== 'local') return;
-  // showBanner / enabled 跟检测器无关，没连上宿主时也要能改
+  // showBanner / showBlind / enabled 跟检测器无关，没连上宿主时也要能改
   if (ch.showBanner) showBanner = ch.showBanner.newValue !== false;
+  if (ch.showBlind) showBlind = ch.showBlind.newValue === true;
   if (ch.enabled) enabled = ch.enabled.newValue !== false;
   if (!port) return;
   if (ch.muteTail || ch.muteLead) {
@@ -149,10 +166,14 @@ window.addEventListener('message', (e) => {
       'drm': '这是 DRM 保护的内容，音频是密文，无法检测',
     }[d.reason] || ('解码器不支持：' + d.reason.replace('codec:', ''));
     L('失明:', why);
-    banner('本页无法防护 —— ' + why);
+    // 徽标照常变「—」，跟提示条开关无关：关掉的只是页面上的打扰，
+    // 不是「让用户以为还在保护」。静默失效是这个项目最不能出的错。
     chrome.runtime.sendMessage({ type: 'blind', reason: d.reason }).catch(() => {});
+    // 等配置读完再决定弹不弹，否则抢在 storage 返回之前就按默认值弹了
+    uiCfg.then(() => { if (showBlind) banner('本页无法防护 —— ' + why); });
   } else if (d.type === 'ww:muted') {
-    chrome.runtime.sendMessage({ type: 'muted' }).catch(() => {});
+    const word = wordBySpan.get(spanKey(d.span));
+    chrome.runtime.sendMessage({ type: 'muted', word }).catch(() => {});
   }
 });
 

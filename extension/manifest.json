@@ -6,7 +6,6 @@
   "permissions": [
     "storage",
     "unlimitedStorage",
-    "scripting",
     "tabs",
     "offscreen"
   ],

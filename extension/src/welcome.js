@@ -112,15 +112,6 @@ $('dlscript').onclick = async () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 };
 
-// popup 里的「兼容性探测」入口带 #probe 过来，直接滚到第 3 步，
-// 免得用户在长页面里自己找
-if (location.hash === '#probe') {
-  addEventListener('DOMContentLoaded', () => {
-    const el = $('s3');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  });
-}
-
 // ----------------------------------------------------------- 3. 自检
 
 function parseWav(ab) {
@@ -271,62 +262,6 @@ $('run').onclick = async () => {
     }
   } finally {
     $('run').disabled = false;
-  }
-};
-
-// ----------------------------------------------------------- 4. 站点探测
-
-$('probe').onclick = async () => {
-  show('s3res', '', '正在查…');
-  try {
-    const tabs = await chrome.tabs.query({});
-    const cands = tabs.filter(t => /^https?:/.test(t.url || '') &&
-      !t.url.startsWith(chrome.runtime.getURL('')));
-    let found = null;
-    for (const t of cands) {
-      try {
-        const [r] = await chrome.scripting.executeScript({
-          target: { tabId: t.id },
-          world: 'MAIN',
-          func: () => {
-            const v = document.querySelector('video, audio');
-            if (!v) return null;
-            return {
-              src: (v.src || '').slice(0, 24),
-              hasSrcObject: !!v.srcObject,
-              handle: typeof MediaSourceHandle !== 'undefined' &&
-                      v.srcObject instanceof MediaSourceHandle,
-              workerCapable: !!(self.MediaSource &&
-                                MediaSource.canConstructInDedicatedWorker),
-              hooked: !!window.__wwInstalled,
-            };
-          },
-        });
-        if (r && r.result) { found = { tab: t, ...r.result }; break; }
-      } catch (e) { /* 跳过没权限的标签页 */ }
-    }
-
-    if (!found) {
-      show('s3res', 'bad', '没找到正在播放媒体的标签页。先打开一个视频页再点这里。');
-      return;
-    }
-    const host = new URL(found.tab.url).host;
-    if (found.handle) {
-      mark('s3', 'fail');
-      show('s3res', 'bad', `<b>${host}</b>：这个播放器把 MediaSource 放在 Worker 里` +
-        `（<code>srcObject</code> 是 MediaSourceHandle），主线程抓不到音频数据。` +
-        `这个站点目前挡不住。`);
-    } else if (found.src.startsWith('blob:')) {
-      mark('s3', 'done');
-      show('s3res', 'good', `<b>${host}</b>：走主线程 MSE（<code>src</code> 是 blob:），` +
-        `方案成立 ✓${found.hooked ? '，且扩展已注入。' : '。'}`);
-    } else {
-      show('s3res', 'bad', `<b>${host}</b>：这个媒体元素不走 MSE` +
-        `（<code>src</code> = ${found.src || '空'}），可能是直链播放。` +
-        `预扫描用不上，只能靠实时兜底路径。`);
-    }
-  } catch (e) {
-    show('s3res', 'bad', '探测失败：' + e.message);
   }
 };
 

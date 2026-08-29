@@ -7,7 +7,7 @@
     "test": "npm run test:unit && npm run test:e2e && npm run test:ui",
     "test:unit": "node test/mp4-demux-test.js && node test/text2token-test.js",
     "test:e2e": "node test/e2e-selftest.js",
-    "test:ui": "node test/bundled-test.js && node test/onboarding-test.js",
+    "test:ui": "node test/bundled-test.js && node test/onboarding-test.js && node test/stats-test.js",
     "postinstall": "echo '还差一步浏览器：npx playwright install chromium'"
   },
   "devDependencies": {
