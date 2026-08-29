@@ -2,11 +2,8 @@
 
 > 看视频时视频里说了一句「小爱同学」，桌上的手机亮了。
 
-一个 Chrome 扩展，在唤醒词播出去**之前**把它静音掉，
-别让视频唤醒你身边的设备。**全程本地推理，零网络请求。**
-
-Block wake words ("小爱同学", "小度小度", "天猫精灵", …) in browser video
-before they reach your devices. 100% on-device inference, no network requests.
+一个 Chrome 扩展，在「小爱同学」「小度小度」「天猫精灵」这类唤醒词播出去
+**之前**把它静音掉，别让视频唤醒你身边的设备。**全程本地推理，零网络请求。**
 
 ---
 
