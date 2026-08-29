@@ -53,6 +53,25 @@ jobs:
           path: ~/ww-build
           key: ww-build-${{ runner.os }}-${{ hashFiles('extension/vendor/build-wasm.sh') }}
 
+      # 版本号只有一个来源：extension/manifest.json。打 tag 发版时它必须和 tag
+      # 对得上——否则 Release 标题写 v0.2.0，挂的文件却叫 …-0.1.0.zip，装进
+      # 浏览器显示 0.1.0，而整条流水线一声不吭。宁可在这里红掉。
+      - name: 取版本号（发版时校验与 tag 一致）
+        id: ver
+        run: |
+          V=$(python3 -c "import json;print(json.load(open('extension/manifest.json'))['version'])")
+          echo "v=$V" >> "$GITHUB_OUTPUT"
+          echo "manifest 版本：$V"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            T="${GITHUB_REF_NAME#v}"
+            if [ "$T" != "$V" ]; then
+              echo "!! tag 是 ${GITHUB_REF_NAME}（→ $T），manifest 里是 $V，对不上。"
+              echo "   改 extension/manifest.json 的 version，或者换个 tag。"
+              exit 1
+            fi
+            echo "tag 与 manifest 一致 ✓"
+          fi
+
       - name: 编引擎 / 取模型 / 打包
         run: |
           chmod +x extension/tools/*.sh extension/vendor/*.sh
@@ -82,9 +101,12 @@ jobs:
             echo "!! dist/ 里有私钥，拒绝继续"; ls -l dist/*.pem; exit 1
           fi
 
+      # artifact 名会成为网页下载时那层外壳的文件名（GitHub 总会再套一层 zip）。
+      # 带上版本和 commit，免得下载目录里堆着一排同名的 wakeword-firewall.zip
+      # 分不清谁是谁。壳里那个才是 pack.sh 出的包，一直带着版本号。
       - uses: actions/upload-artifact@v4
         with:
-          name: wakeword-firewall
+          name: wakeword-firewall-${{ steps.ver.outputs.v }}-${{ github.sha }}
           path: dist/*.zip
           retention-days: 30
 

@@ -457,12 +457,22 @@ git add .github/workflows/build.yml && git commit -m "加 CI 构建" && git push
 zip 会挂在这一次运行的产物里。确认没问题再发正式版：
 
 ```bash
-# 版本号跟 extension/manifest.json 里的 version 对齐
+# tag 必须和 extension/manifest.json 的 version 一致，CI 会当场校验
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-推 tag 会触发同一个 workflow，编完自动建 Release 并把 zip 传上去。
-CI 只发 zip，不发 crx——签名私钥不该放在 CI 上，见上一节。
+推 tag 会触发同一个 workflow，编完自动建 Release 并把 zip 传上去，
+文件名是 `wakeword-firewall-<版本>.zip`。CI 只发 zip 不发 crx——
+签名私钥不该放在 CI 上，见上一节。
+
+发新版就是两步：改 `extension/manifest.json` 的 `version`，打同号的 tag。
+两者对不上 CI 会直接红掉——否则 Release 标题写着 v0.2.0、挂的文件却是
+`…-0.1.0.zip`、装进浏览器显示 0.1.0，而整条流水线一声不吭。
+
+> **手动触发（workflow_dispatch）拿到的包不一样**：网页上下载 Actions 产物时，
+> GitHub 会**再套一层 zip**，外层按 artifact 名命名。所以你会先解出一个
+> `wakeword-firewall-<版本>-<commit>.zip`，里面才是能装的
+> `wakeword-firewall-<版本>.zip`。Release 里的是直接上传的，没有这层壳。
 
 **实测耗时**：GitHub 的 `ubuntu-latest`（4 核）冷缓存从零编完整条链路 **7 分 39 秒**
 （含下 emsdk 工具链 356 MB、编 wasm、跑全套测试）。emsdk 和 sherpa 的构建走
