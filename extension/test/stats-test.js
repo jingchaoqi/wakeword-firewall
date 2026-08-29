@@ -167,6 +167,29 @@ ms.addEventListener('sourceopen',async()=>{
   const banner2 = await drm2.$eval('.ww-banner', el => el.textContent).catch(() => '');
   push('打开开关后就会弹', /本页无法防护/.test(banner2));
 
+  // ── 5. 设置面板真打开一次 ────────────────────────────────────────
+  // popup 之前零覆盖，而它是用户唯一会反复打开的界面。这里只验它能起来、
+  // 统计画得出、以及那两条容易被改回去的文案。
+  const pop = await ctx.newPage();
+  await pop.goto(`chrome-extension://${id}/src/popup.html`);
+  await pop.waitForTimeout(1200);
+  const pe = await pop.evaluate(() => ({
+    err: window.__err || null,
+    blindLabel: (document.querySelector('#blind') || {}).parentElement
+      ? document.querySelector('#blind').parentElement.textContent.trim() : '',
+    hints: [...document.querySelectorAll('.hint')].map(e => e.textContent.trim()),
+    tabs: [...document.querySelectorAll('.tabs button')].map(e => e.textContent.trim()),
+    blindChecked: (document.querySelector('#blind') || {}).checked,
+  }));
+  push('设置面板打得开', !!pe.blindLabel);
+  push('开关文案是「当前页不支持拦截唤醒词时显示悬浮提示」',
+    /当前页不支持拦截唤醒词时显示悬浮提示/.test(pe.blindLabel));
+  push('说明写明图标标记与开关无关',
+    pe.hints.some(h => /无论悬浮提示是否开启/.test(h) && /标记当前页不支持/.test(h)));
+  push('说明里不再暗示关掉就没提示',
+    !pe.hints.some(h => /默认不弹|不必每次都被页面打断/.test(h)));
+  push('两栏切换在', JSON.stringify(pe.tabs) === JSON.stringify(['本页', '历史累计']));
+
   console.log('\n============ 统计与徽标 ============');
   for (const [n, ok] of checks) console.log(`  ${ok ? '✅' : '❌'}  ${n}`);
   if (!checks.every(c => c[1])) {

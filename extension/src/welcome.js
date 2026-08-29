@@ -190,7 +190,7 @@ $('run').onclick = async () => {
         const m = e.data;
         if (m.type === 'error') { clearTimeout(timer); rej(new Error(m.message)); }
         else if (m.type === 'ready') {
-          show('s2res', '', '引擎已加载，正在喂音频…');
+          show('s2res', '', '正在检测…');
           const { samples } = parseWav(wav);
           const CH = 1600;
           for (let i = 0; i < samples.length; i += CH) {
@@ -220,14 +220,16 @@ $('run').onclick = async () => {
       // 显示出来只会让人困惑「为什么是这几个字」。技术细节留在控制台给开发者。
       console.log('[自检] 命中', h.keyword, '@', h.at.toFixed(2) + 's',
                   '静音区间', h.span.map(x => x.toFixed(2)).join('–') + 's');
+      // 用户只需要知道「能用」。素材是随扩展打包的一小段测试音频，但说出来
+      // 反而让人怀疑是不是录了什么音——这一步全程本地、没有麦克风、不联网，
+      // 多解释一句都是给人添疑虑。技术细节上面已经打进控制台了。
       show('s2res', 'good',
         '<b>✓ 检测引擎工作正常</b>' +
-        '<br><span class="muted">已完整跑通一遍检测链路，用时 ' +
-        `${((h.span[1] - h.span[0])).toFixed(1)} 秒的音频片段。可以开始用了。</span>`);
+        '<br><span class="muted">可以开始用了。</span>');
     } else {
       mark('s2', 'fail');
       show('s2res', 'bad',
-        '<b>引擎加载成功，但没认出测试音频里的词。</b>多半是词表被改坏了，' +
+        '<b>引擎装上了，但没能识别出结果。</b>多半是词表被改坏了，' +
         '或者引擎用的模型和词表的 token 体系对不上（本词表用的是拼音声母+韵母）。' +
         '<br><span class="muted">控制台有详细日志。</span>');
     }

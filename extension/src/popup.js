@@ -95,7 +95,6 @@ $('tabhist').onclick = () => selectTab('hist');
   paintBanner();
   // 默认关，见 content.js 里那段注释：图标角上的叹号已经在说这件事了
   $('blind').checked = cfg.showBlind === true;
-  paintBlind();
   paint(cfg.muteTail ?? 0.3);
 })();
 
@@ -172,17 +171,11 @@ $('guide').onclick = () => {
   window.close();
 };
 
-function paintBlind() {
-  $('blindhint').innerHTML = $('blind').checked
-    ? 'DRM 内容、Worker 里的播放器、Chrome 解不了的音轨——这几类本来就挡不住，' +
-      '遇到时在页面上也弹一条说明。'
-    : '默认不弹。<b>工具栏图标角上会出现 <code>!</code></b>，' +
-      '够你看出这一页没护住了，不必每次都被页面打断。';
-}
-
+// 这条提示是固定的，写死在 popup.html 里：图标上那个 ! 跟勾选框无关，
+// **始终**会出现。以前按勾选状态显示两句不同的话，读起来像是关掉就没提示了，
+// 容易让人以为关掉等于静默失效。
 $('blind').onchange = async () => {
   await chrome.storage.local.set({ showBlind: $('blind').checked });
-  paintBlind();
 };
 
 function paintBanner() {
