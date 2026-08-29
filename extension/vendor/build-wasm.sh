@@ -54,5 +54,6 @@ cp "$OUT/sherpa-onnx-wasm-kws-main.wasm" "$HERE/sherpa-onnx-wasm.wasm"
   cp "$OUT/sherpa-onnx-wasm-kws-main.data" "$HERE/sherpa-onnx-wasm.data"
 echo "==> 已拷贝到 $HERE"
 echo
-echo "注意：这个构建把模型预加载进了 .data，扩展里 models/ 那份就用不上了，"
-echo "      src/kws-worker.js 里写 FS 的那几行要相应改掉（见 vendor/README.md）。"
+echo "这个构建把模型预加载进了 .data，扩展里 models/ 那份就用不上了。"
+echo "源码已经按这个前提写好（kws-worker.js 会自动选路径），不用改任何代码。"
+echo "下一步：./extension/tools/build-all.sh 会接着去重 models/ 并打包。"

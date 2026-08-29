@@ -24,6 +24,11 @@ on:
       - 'build/**'
       - '.github/workflows/build.yml'
 
+# 默认的 GITHUB_TOKEN 从 2023 年起是只读的，不写这段，打 tag 时
+# softprops/action-gh-release 会以 403 收场——前面 40 分钟全白编。
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,8 +37,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: 装系统依赖
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build zip
 
       # 编译产物缓存：命中的话整个第 1 步跳过，几分钟就能出包。
       # key 里放 build-wasm.sh 的哈希——脚本改了（换 emsdk 版本、换模型）就重编。
@@ -49,25 +58,24 @@ jobs:
           chmod +x extension/tools/*.sh extension/vendor/*.sh
           ./extension/tools/build-all.sh
 
-      - name: 跑单测（纯 Node，秒级）
+      # 全套测试。e2e 那条是唯一能证明"包装上去真的会静音"的检查，
+      # 所以它必须能挂。之前它写着 continue-on-error，而测试里的 Chrome 路径
+      # 又是写死的开发容器路径——等于在 CI 上必挂且永远不报。一起修掉了。
+      - name: 跑测试（单测 + 端到端 + 引导页）
+        working-directory: extension
         run: |
-          node extension/test/mp4-demux-test.js
-          node extension/test/text2token-test.js
-
-      - name: 端到端自检（真浏览器，跑完整检测链路）
-        run: |
-          npx --yes playwright@1.56.1 install --with-deps chromium
-          node -e "console.log(require.resolve('playwright'))" 2>/dev/null || npm i -g playwright@1.56.1
-          NODE_PATH=$(npm root -g) node extension/test/e2e-selftest.js
-        # 这一步依赖真实浏览器环境，CI 上第一次跑很可能要调；
-        # 失败不该挡住出包，产物本身由上面几步保证
-        continue-on-error: true
+          npm install
+          npx playwright install --with-deps chromium
+          npm test
 
       - name: 记录产物信息
         run: |
           ls -lh dist/
           echo "--- 包里有没有引擎 ---"
-          unzip -l dist/*.zip | grep -E 'sherpa-onnx-wasm|selftest' || echo "!! 引擎不在包里"
+          unzip -l dist/*.zip | grep -E 'sherpa-onnx-wasm\.wasm' \
+            || { echo "!! 引擎不在包里"; exit 1; }
+          unzip -l dist/*.zip | grep -E 'assets/selftest\.wav' \
+            || { echo "!! 自检素材不在包里"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:

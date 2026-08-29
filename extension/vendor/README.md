@@ -1,14 +1,31 @@
 # vendor 目录
 
-| 文件 | 状态 |
-|---|---|
-| `sherpa-onnx-kws.js` | ✅ 来自 npm `sherpa-onnx@1.13.6`，纯 JS 封装，与环境无关，可直接用 |
-| `sherpa-onnx-wasm.js` | ⚠️ 目前是 npm 的 Node 版胶水，**换成自编产物后覆盖它** |
-| `sherpa-onnx-wasm.wasm` | ❌ **缺失** —— 跑 `./build-wasm.sh` |
+第三方代码与编译产物。许可见仓库根的 [NOTICE](../../NOTICE)。
+
+| 文件 | 入库？ | 来源 |
+|---|---|---|
+| `sherpa-onnx-kws.js` | ✅ 在仓库里 | sherpa-onnx 上游 `wasm/kws/sherpa-onnx-kws.js` 的**逐字节副本**，未改一个字符。纯 JS 封装，与环境无关 |
+| `build-wasm.sh` | ✅ 在仓库里 | 本项目写的编译脚本 |
+| `sherpa-onnx-wasm.js` | ❌ 需自己编 | `build-wasm-simd-kws.sh` 的产物，约 80 KB |
+| `sherpa-onnx-wasm.wasm` | ❌ 需自己编 | 同上，约 12 MB |
+| `sherpa-onnx-wasm.data` | ❌ 需自己编 | 同上，约 13 MB，模型预加载包 |
+
+后三个被 `.gitignore` 挡着，**干净 clone 之后这里只有两个文件**，这是正常的。
+补齐的办法是一条命令：
+
+```bash
+./extension/tools/build-all.sh
+```
+
+它会编引擎、取模型、打包，每步都跳过已完成的。首次约 20–40 分钟。
+`build-wasm.sh` 编完会**自己把产物拷进这个目录**，不需要你手动搬。
+
+> 想同步上游的 `sherpa-onnx-kws.js`，直接和 sherpa-onnx 仓库里那份 `diff`
+> 即可——我们没加任何本地修改，包括版权头（上游那份也没有）。
 
 ## 为什么必须自己编
 
-两条看起来更省事的路都是死的，我都撞过：
+两条看起来更省事的路都是死的，都撞过：
 
 **1. npm 包自带的 wasm 用不了。** `sherpa-onnx@1.13.6` 里的
 `sherpa-onnx-wasm-nodejs.wasm` 是用 `-sNODERAWFS=1` 构建的——文件系统硬绑
@@ -23,29 +40,17 @@ P0 阶段就是用它验证的，结果和 Python 版完全一致。）
 
 **2. 官方没有发布 KWS 的浏览器 wasm。** k2-fsa 在 Huggingface Space 上
 只放了 ASR / TTS / VAD / 说话人分离 / 语音增强的 wasm，**没有 KWS**。
-可自行核对仓库里的 `.github/workflows/wasm-simd-hf-space-*.yaml`——
+可自行核对上游的 `.github/workflows/wasm-simd-hf-space-*.yaml`——
 一共十个，没有 kws 那一个。
 
-## 编完之后要改一处代码
+## 模型去哪了
 
-官方的 `build-wasm-simd-kws.sh` 会用 `--preload-file assets@.` 把模型
-预打包进 `.data` 文件。也就是说模型已经在虚拟文件系统里了，
-`src/kws-worker.js` 里手动 `FS.writeFile` 的那四行要去掉，
-路径改成 assets 里的原始文件名：
+`build-wasm-simd-kws.sh` 用 `--preload-file assets@.` 把模型打进了 `.data`，
+所以模型已经在 wasm 的虚拟文件系统里，**不需要再单独 fetch**。
 
-```js
-// 改成（模型已由 .data 预加载，无需写入）
-transducer: {
-  encoder: './encoder-epoch-12-avg-2-chunk-16-left-64.onnx',
-  decoder: './decoder-epoch-12-avg-2-chunk-16-left-64.onnx',
-  joiner:  './joiner-epoch-12-avg-2-chunk-16-left-64.onnx',
-},
-tokens: './tokens.txt',
-```
+`src/kws-worker.js` 和 `src/engine-loader.js` 已经按这个前提写好了：
+拿得到 `.data` 就走预加载路径，拿不到才回落去 `models/` 取。
+`build-all.sh` 也会在检测到 `.data` 时删掉重复的 `models/`（省 5.3 MB）。
 
-同时 `src/content.js` 里就不用再 fetch `models/*` 了，改成 fetch
-`vendor/sherpa-onnx-wasm.data` 并通过 `Module.getPreloadedPackage`
-或 `locateFile` 交给胶水。
-
-`src/node-shim.js` 那层 `require("path")` 垫片大概率也不再需要
-（浏览器构建不会有那句无条件的 require），但留着无害。
+**这些都是自动的，不需要你改任何源码。**（旧版本的这份 README 让人手动去改
+`kws-worker.js`，那份指引已经过时——照做反而会改坏。）

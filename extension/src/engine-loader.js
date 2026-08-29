@@ -29,9 +29,20 @@
     } catch (e) { return null; }
   }
 
+  // 用户自装那条路要读 chrome.storage。offscreen 文档拿不到它（API 面比普通
+  // 扩展页窄，chrome.storage 实测是 undefined），直接调会抛
+  // "Cannot read properties of undefined (reading 'local')" ——
+  // 于是「引擎没编」这件事就变成一句没头没脑的 TypeError，
+  // 内容脚本认不出 NO_ENGINE，页面上什么提示都没有。这里明确挡一下。
+  function canReadStore() {
+    return typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local
+      && root.WWEngine;
+  }
+
   async function load() {
     const b = await tryBundled();
     if (b) return b;
+    if (!canReadStore()) return null;
     const st = await root.WWEngine.status();
     if (!st.installed) return null;
     const [glue, wasm, data] = await Promise.all([
@@ -46,6 +57,7 @@
     if (b) return { installed: true, source: 'bundled',
                     wasm: b.wasm.byteLength, data: b.data ? b.data.byteLength : 0,
                     glue: b.glue.length };
+    if (!canReadStore()) return { installed: false, source: null };
     const st = await root.WWEngine.status();
     return Object.assign({ source: st.installed ? 'user' : null }, st);
   }

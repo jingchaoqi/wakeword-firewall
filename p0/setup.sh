@@ -4,7 +4,7 @@ set -e
 cd "$(dirname "$0")"
 echo "▸ 安装 Python 依赖"
 pip install sherpa-onnx numpy || pip install sherpa-onnx numpy --break-system-packages
-command -v ffmpeg >/dev/null || { echo "!! 需要 ffmpeg：apt install ffmpeg / brew install ffmpeg"; exit 1; }
+for c in ffmpeg ffprobe; do command -v $c >/dev/null || { echo "!! 需要 $c（ffmpeg 套件）：apt install ffmpeg / brew install ffmpeg"; exit 1; }; done
 
 mkdir -p models && cd models
 B=https://github.com/k2-fsa/sherpa-onnx/releases/download

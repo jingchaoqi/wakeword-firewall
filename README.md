@@ -61,7 +61,7 @@ before they reach your devices. 100% on-device inference, no network requests.
 | 系统 | macOS / Linux / Windows（WSL）都行 |
 | 编引擎需要 | `git`、`cmake`、`python3`，以及能跑 emscripten 的环境 |
 | Python 工具链需要 | `python3` + `ffmpeg` |
-| 磁盘 | 编译过程约 3 GB，最终产物约 16 MB |
+| 磁盘 | 编 wasm 过程约 3 GB；Python 那条路的模型约 570 MB；最终扩展包 15 MB |
 
 ---
 
@@ -72,8 +72,12 @@ before they reach your devices. 100% on-device inference, no network requests.
 ```bash
 git clone https://github.com/jingchaoqi/wakeword-firewall.git
 cd wakeword-firewall/p0
-./setup.sh          # 装 sherpa-onnx + numpy，下载模型（约 75 MB，来自 GitHub Releases）
+./setup.sh          # 装 sherpa-onnx + numpy，下载模型（约 520 MB，来自 GitHub Releases）
 ```
+
+> **520 MB 里有 487 MB 是二级复核用的 ASR 模型**（一级 KWS 模型只有 31 MB）。
+> 只想快速看看认不认得出，可以 Ctrl-C 掉第二个下载，然后所有命令都加 `--no-verify`
+> ——那条路只用 KWS，不碰 ASR。解压后占盘约 570 MB。
 
 `setup.sh` 会检查 `ffmpeg` 是否存在。没有的话：
 
@@ -478,4 +482,5 @@ MediaSource.canConstructInDedicatedWorker   // 仅能力探测，true 不代表�
 
 ## 许可
 
-Apache-2.0
+Apache-2.0，全文见 [LICENSE](LICENSE)。第三方组件的来源与许可见 [NOTICE](NOTICE)，
+发布包里也带着这两个文件。

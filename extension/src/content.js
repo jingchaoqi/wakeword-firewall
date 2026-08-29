@@ -182,7 +182,14 @@ function bannerSetup() {
 let bannerEl = null, bannerTimer = null;
 
 function banner(text, withUndo) {
-  if (!document.body) return;
+  // 内容脚本是 document_start 注入的，检测器起不来这类错误往往在 <body> 之前
+  // 就发生了。以前这里直接 return，于是最该看见的那条提示恰好总被丢掉——
+  // 用户看到的是「什么都没发生」。改成排队等 body。
+  if (!document.body) {
+    document.addEventListener('DOMContentLoaded',
+      () => banner(text, withUndo), { once: true });
+    return;
+  }
   if (!bannerEl) {
     bannerEl = document.createElement('div');
     bannerEl.className = 'ww-banner';

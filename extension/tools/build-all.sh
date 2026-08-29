@@ -60,6 +60,15 @@ else
   "$HERE/embed-engine.sh" "$OUT_WASM"
 fi
 
+# build-wasm.sh 自己就会把产物拷进 vendor/，所以上面那个 embed-engine 分支在
+# 完整流程里几乎永远走不到，而模型去重恰好写在 embed-engine 里——结果每次出的
+# 包都白白多背 5.7MB 的 models/（.data 里已经有一份，engine-loader 拿到 .data
+# 就再也不看 models/）。去重挪到这里，跟 embed-engine 走哪条分支无关。
+if [ -f "$EXT/vendor/sherpa-onnx-wasm.data" ] && [ -d "$EXT/models" ]; then
+  echo "   .data 预加载包已含模型，移除重复的 models/（省 $(du -sh "$EXT/models" | cut -f1)）"
+  rm -rf "$EXT/models"
+fi
+
 echo
 echo "   extension/ 现在可以直接在 chrome://extensions 用「加载已解压」装了"
 

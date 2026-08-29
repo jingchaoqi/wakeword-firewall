@@ -128,7 +128,14 @@ extension/              Chrome MV3 扩展本体
     embed-engine.sh     把编好的引擎打进包（分发前跑这一次）
     pack.sh             出 .zip（商店）+ .crx（企业策略）；引擎不在时会拒绝打包
     site-probe.js       站点兼容性探针，粘进控制台跑
-  test/                 Playwright 端到端测试
+  test/
+    e2e-selftest.js     ★ 端到端：hook → 解封装 → 解码 → KWS → 实测增益
+    mp4-demux-test.js   fMP4 解析单测（28 项，纯 Node，不用浏览器）
+    text2token-test.js  中文转 token 单测（31 项，纯 Node，不用浏览器）
+    bundled-test.js     引导页：引擎已内置时该自动判定通过
+    onboarding-test.js  引导页：引擎未装时该说清楚差什么（自己造这个场景）
+    util.js             找浏览器 / 造素材 / 起静态服务
+  package.json          只声明测试依赖（playwright）；扩展本身不需要 npm
 
 p0/                     P0 阶段的研究工具链（Python）
   wakeword.py           两级检测核心：KWS 找候选 + ASR 复核给精确时间戳
@@ -184,13 +191,18 @@ build/                  辅助脚本
 **先跑这个**——素材自给自足，不需要任何私人视频：
 
 ```bash
-node extension/test/e2e-selftest.js
+cd extension
+npm install                        # 只装 playwright，扩展本身不需要 npm
+npx playwright install chromium    # 再装一个浏览器
+npm test                           # 全套：单测 + 端到端 + 引导页
 ```
+
+单跑其中一组：`npm run test:unit`（纯 Node，秒级）/ `npm run test:e2e` / `npm run test:ui`。
 
 它用 `extension/assets/selftest.wav`（`fetch-models.sh` 取的官方测试音频）现场转成
 WebM/Opus、切成 7 段投喂，跑完整条链路：hook `appendBuffer` → WebM 解封装 →
 WebCodecs 解码 → 重采样 → KWS → GainNode 静音。顺便压了 `webm-demux.js`
-跨分段边界的有状态解析。前提是引擎已经内置（跑过 `embed-engine.sh`）。
+跨分段边界的有状态解析。前提是引擎已经内置（跑过 `build-all.sh`）。
 
 **它有两个独立判定，别只看第一个**：
 

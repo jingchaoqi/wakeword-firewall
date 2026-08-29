@@ -1,0 +1,40 @@
+唤醒词防火墙 · wakeword-firewall
+Copyright 2026 wakeword-firewall contributors
+
+本产品包含以下第三方作品，均为 Apache License 2.0：
+
+--------------------------------------------------------------------------
+1. sherpa-onnx
+   https://github.com/k2-fsa/sherpa-onnx
+   Copyright (c)  2022-2024  Xiaomi Corporation
+
+   使用方式：
+   - extension/vendor/sherpa-onnx-kws.js
+       上游 wasm/kws/sherpa-onnx-kws.js 的逐字节副本，未作修改。
+   - extension/vendor/sherpa-onnx-wasm.{js,wasm,data}
+       由上游 build-wasm-simd-kws.sh 编译产出（不入库，见 README 第 3 步）。
+   - p0/ 下的 Python 工具链通过 pip 包 sherpa-onnx 调用，不含其源码。
+
+--------------------------------------------------------------------------
+2. sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01（预训练模型）
+   https://github.com/k2-fsa/sherpa-onnx/releases/tag/kws-models
+   Copyright (c)  2022-2024  Xiaomi Corporation
+
+   使用方式：由 extension/tools/fetch-models.sh 与 p0/setup.sh 在构建/安装时
+   下载，不入库。发布包内含其编译进 .data 预加载包的副本。
+
+   同一发布包内的 test_wavs/3.wav 被取作 extension/assets/selftest.wav，
+   用于安装引导页的自检与端到端测试。
+
+--------------------------------------------------------------------------
+3. sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20（预训练模型）
+   https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models
+   Copyright (c)  2022-2024  Xiaomi Corporation
+
+   使用方式：仅 p0/ 的二级 ASR 复核用，由 p0/setup.sh 下载，不入库，
+   不进入浏览器扩展的发布包。
+
+--------------------------------------------------------------------------
+另：extension/src/pinyin-data.js 的汉字读音由 build/gen-pinyin-data.py 借助
+pypinyin（MIT）生成。生成物是读音数据本身，不含 pypinyin 的代码，构建时才
+需要该依赖。

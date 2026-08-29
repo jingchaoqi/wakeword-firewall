@@ -42,7 +42,12 @@ NAME="wakeword-firewall-$VER"
 STAGE="$OUT/$NAME"
 rm -rf "$STAGE"; mkdir -p "$STAGE"
 ( cd "$EXT" && tar c --exclude=test --exclude=tools --exclude=node_modules \
-    --exclude='*.md' . ) | ( cd "$STAGE" && tar x )
+    --exclude='*.md' --exclude=package.json --exclude=package-lock.json . ) \
+  | ( cd "$STAGE" && tar x )
+
+# 发布包里带上许可与第三方声明——Apache-2.0 第 4 条要求随分发件附带
+cp "$EXT/../LICENSE" "$EXT/../NOTICE" "$STAGE/" 2>/dev/null || \
+  echo "!! 仓库根没有 LICENSE/NOTICE，发布包缺许可文件" >&2
 
 ( cd "$STAGE" && zip -qr "$OUT/$NAME.zip" . )
 echo "==> $OUT/$NAME.zip  $(du -h "$OUT/$NAME.zip" | cut -f1)   ← 传 Chrome 应用商店用这个"

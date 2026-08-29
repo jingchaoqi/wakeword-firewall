@@ -1,4 +1,4 @@
-# ── 模型文件（p0/setup.sh 会自动下载，约 75MB）──────────────────
+# ── 模型文件（p0/setup.sh 会自动下载，约 520MB）─────────────────
 p0/models/
 extension/models/
 *.onnx

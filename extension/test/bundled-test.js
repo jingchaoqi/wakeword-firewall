@@ -1,9 +1,11 @@
+/** 引擎已内置时，引导页第 1 步该自动判定通过（onboarding-test.js 验的是反面） */
 const { chromium } = require('playwright');
 const path = require('path');
+const { requireChrome } = require('./util.js');
 (async () => {
-  const ext = path.resolve(__dirname, '..');
+  const ext = process.env.WW_EXT || path.resolve(__dirname, '..');
   const ctx = await chromium.launchPersistentContext('/tmp/ww-bd-' + Date.now(), {
-    headless: true, executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+    headless: true, executablePath: requireChrome(),
     args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`, '--no-sandbox'],
   });
   await new Promise(r => setTimeout(r, 3500));

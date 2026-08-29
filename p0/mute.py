@@ -92,11 +92,22 @@ def apply_mute(inp, out, spans):
             w.setnchannels(ch); w.setsampwidth(2); w.setframerate(sr)
             w.writeframes(y.tobytes())
 
-        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y",
-                        "-i", inp, "-i", wav2,
-                        "-map", "0:v:0", "-map", "1:a:0",
-                        "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
-                        "-shortest", out], check=True)
+        # 纯音频输入（mp3/m4a/wav）没有 0:v:0，硬映射会让 ffmpeg 直接报
+        # "Error parsing options"，然后这里抛 CalledProcessError 的裸栈。
+        # 先问一句有没有视频流，没有就只封音频。
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "v:0",
+             "-show_entries", "stream=codec_type", "-of", "csv=p=0", inp],
+            capture_output=True, text=True)
+        has_video = "video" in probe.stdout
+
+        cmd = ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", inp, "-i", wav2]
+        if has_video:
+            cmd += ["-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy"]
+        else:
+            cmd += ["-map", "1:a:0"]
+        cmd += ["-c:a", "aac", "-b:a", "160k", "-shortest", out]
+        subprocess.run(cmd, check=True)
 
 
 # ------------------------------------------------------------------ 主流程
