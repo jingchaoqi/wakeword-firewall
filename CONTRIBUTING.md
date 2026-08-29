@@ -113,7 +113,8 @@ extension/              Chrome MV3 扩展本体
     engine-store.js     引擎存储（chrome.storage.local + base64）
     offscreen.html/js   ★ 检测宿主：扩展源，绕开页面 CSP，多标签页共用一个 wasm
     background.js       安装即开引导页；按需创建 offscreen；按标签页/按词记账与徽标
-    popup.html/js       设置面板：总开关、静音时长、词表编辑
+    popup.html/js       设置面板：本页/历史的按词统计、总开关、静音时长、
+                        两个提示开关、词表编辑
     welcome.html/js     安装引导页（自动检测 / 拖拽装引擎 / 自检）
     text2token.js       中文 → 模型 token 序列（让用户能直接输中文加词）
     pinyin-data.js      上面那个的数据（20840 字 / 72KB），由 build/ 的脚本生成
@@ -168,6 +169,29 @@ build/                  辅助脚本
 > 实测在受限环境里 9 轮跑完，产出 12 MB wasm + 13 MB 模型预加载包。
 > 用法：`WW_WORK=/tmp/ww-build python3 build/build-loop.py`（路径全部走环境变量，
 > 见各脚本头部注释）。
+
+## 数据存在哪
+
+改统计或设置之前先看这张表——三处存储的生命周期不一样，选错了会出微妙的 bug。
+
+| 键 | 存哪 | 活多久 | 内容 |
+|---|---|---|---|
+| `keywords` `enabled` `muteTail` `showBanner` `showBlind` | `storage.local` | 永久 | 用户设置，面板里能改 |
+| `score` `threshold` `muteLead` | `storage.local` | 永久 | 全局灵敏度，**没有 UI**，只能从控制台设（默认 2.0 / 0.25 / 1.55）|
+| `statsAll` | `storage.local` | 永久 | 历史累计 `{words:{词:次数}, total, since}` |
+| `tabStats` | `storage.**session**` | 到浏览器关闭 | 按标签页 `{[tabId]:{n, words, blind}}` |
+| `eng_glue` `eng_wasm` `eng_data` | `storage.local` | 永久 | 用户自装的引擎（base64） |
+
+两个容易踩的点：
+
+**统计不能只放在 service worker 的内存里。** MV3 的 SW 闲置约 30 秒就被回收，
+而徽标是浏览器状态、活得比它久——原来就出现过「徽标显示 5，再命中一次变回 1」。
+所以按标签页的账走 `storage.session`：SW 重启后能接着数，浏览器关掉才清。
+
+**读设置的时机比想象中早。** `content.js` 里 `showBlind` 是在模块顶层单独读的，
+没有跟着 `bootWorker()`——因为「本页挡不住」的信号可能比检测器起得还早
+（DRM 是 `setMediaKeys` 一调用就报），而 `enabled === false` 时 `bootWorker`
+直接 `return`，根本不会读配置。加新的 UI 开关时留意走哪条路。
 
 ## 开发环境
 
@@ -391,8 +415,10 @@ node bundled-test.js    # 引擎已内置时的引导页分支
       document.querySelector('video')?.srcObject  // MediaSourceHandle → 抓不到
       ```
 
-      扩展内置了探针（中招会弹提示、徽标变 `—`，不会静默失败），引导页第 3 步
-      能一键探测。**即便中招也有救**：在 MAIN world 覆盖 `window.Worker`，用
+      中招不会静默失败：`main-world.js` 认出来就报 `ww:blind`，工具栏图标角上
+      出现 `!`。想批量查站点用 `extension/tools/site-probe.js`（粘进控制台跑）
+      ——它以前也做成过引导页的一步，后来撤了，那是开发者工具，对普通用户没意义。
+      **即便中招也有救**：在 MAIN world 覆盖 `window.Worker`，用
       `importScripts` 把补丁前置注入 worker（Chromium 官方认可这是 dedicated
       worker 的可行手段），但复杂度会明显上升。
 - [ ] **在更大的真实素材集上复测误报率**（见[上文](#最需要帮忙的三件事)）
@@ -428,7 +454,8 @@ node bundled-test.js    # 引擎已内置时的引导页分支
 报检测问题请附上：
 
 - 站点和视频链接（如果是公开的）
-- 徽标显示什么（数字 / `—` / 无）
+- 工具栏图标显示什么（数字 / `!` / `3!` / 无），以及鼠标停上去的那句提示
+- 设置面板顶部那两栏（本页 / 历史累计）分别记到了什么词
 - 视频页控制台的完整输出
 - 如果能复现，最好跑一遍 `p0/scan.py` 看看 Python 侧认不认得出——
   这能立刻区分「模型不行」和「浏览器侧管线有问题」
