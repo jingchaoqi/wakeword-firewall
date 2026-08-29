@@ -76,6 +76,11 @@ jobs:
             || { echo "!! 引擎不在包里"; exit 1; }
           unzip -l dist/*.zip | grep -E 'assets/selftest\.wav' \
             || { echo "!! 自检素材不在包里"; exit 1; }
+          # 私钥绝不能进产物。pack.sh 现在没有密钥时会跳过 crx 而不是新造一把，
+          # 但这道闸留着：dist/ 一旦冒出 .pem，宁可让整个构建红掉。
+          if ls dist/*.pem >/dev/null 2>&1; then
+            echo "!! dist/ 里有私钥，拒绝继续"; ls -l dist/*.pem; exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:

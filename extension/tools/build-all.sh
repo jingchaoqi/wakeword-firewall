@@ -31,7 +31,7 @@ if [ -f "$EXT/vendor/sherpa-onnx-wasm.wasm" ]; then
   step "1/4 引擎已在 vendor/，跳过编译"
   ls -lh "$EXT/vendor/"sherpa-onnx-wasm.* | awk '{printf "   %-34s %s\n", $9, $5}'
 elif [ -f "$OUT_WASM/sherpa-onnx-wasm-kws-main.wasm" ]; then
-  step "1/4 已有构建产物（$OUT_WASM），跳过编译"
+  step "1/4 已有构建产物（${OUT_WASM}），跳过编译"
 else
   step "1/4 编 wasm 引擎（20–40 分钟，只此一次）"
   echo "   官方没有发布 KWS 的浏览器 wasm，npm 那份是 Node 专用构建，必须自己编。"

@@ -7,7 +7,7 @@
 # 只是校验和不同——所以调用方拿到新哈希后要去同步 cmake 里的 _HASH。
 #
 #   用法： ./fetch-dep.sh <owner/repo> <ref> <解包后的顶层目录名> <输出文件名>
-#   输出： 打包文件落在 $WW_DL（默认 $WW_WORK/dl），stdout 打印它的 sha256
+#   输出： 打包文件落在 ${WW_DL}（默认 $WW_WORK/dl），stdout 打印它的 sha256
 set -e
 REPO=$1; REF=$2; TOP=$3; OUT=$4
 : "${REPO:?用法: fetch-dep.sh <owner/repo> <ref> <top-dir> <out-file>}"

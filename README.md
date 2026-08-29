@@ -390,16 +390,39 @@ CJK 基本区 20902 个汉字里，转不出来的只有 62 个：
 # 把编好的引擎嵌进扩展包
 ./extension/tools/embed-engine.sh ~/ww-build/sherpa-onnx/build-wasm-simd-kws/install/bin/wasm
 
-# 出 .zip（传应用商店 / 加载已解压）+ .crx（企业策略部署）
+# 出 .zip（传应用商店 / 加载已解压）
 ./extension/tools/pack.sh
 ```
 
 `pack.sh` 会剔掉 `test/`、`tools/` 和所有 `.md`，产物默认落在仓库根目录的
-`dist/`。第一次跑会生成 `.pem` 私钥——**它决定扩展 ID，务必保存，且不要提交进仓库**。
+`dist/`。装扩展、传应用商店都只用这个 zip。
 
 引擎不在时它会**拒绝打包**并告诉你该跑什么。否则会产出一个看着正常、装上却
 完全不工作的 104 KB zip（干净 clone 之后直接跑就会踩到）。确实要打不含引擎的
 包用 `--allow-no-engine`。
+
+### 要出 .crx（只有企业策略部署才需要）
+
+crx 得用私钥签名，而**私钥决定扩展 ID**：换一把钥匙就等于换了一个扩展，
+用户装的旧版收不到更新、设置也全丢。所以 `pack.sh` 默认**不会**替你造钥匙，
+找不到就跳过 crx 并说明原因——默默生成一把随后丢掉，是这类脚本最坑人的行为
+（CI 上尤其如此，每次构建都会得到一个不同 ID 的 crx）。
+
+第一次生成，然后立刻把 `.pem` 挪到仓库外收好：
+
+```bash
+WW_NEW_KEY=1 ./extension/tools/pack.sh
+mv dist/*.pem ~/keys/wakeword-firewall.pem     # 放到仓库外
+```
+
+之后每次都指向同一把钥匙，扩展 ID 才稳定：
+
+```bash
+WW_CRX_KEY=~/keys/wakeword-firewall.pem ./extension/tools/pack.sh
+```
+
+> `.pem` 已经在 `.gitignore` 里，但别只依赖它——**丢了这把钥匙就再也发不出
+> 同 ID 的更新**，泄露了则别人能冒充你的扩展签名。
 
 **CI 也能出包**。仓库里带了一份现成的 workflow，装上即可：
 
@@ -409,8 +432,7 @@ cp build/github-actions-build.yml .github/workflows/build.yml
 git add .github/workflows/build.yml && git commit -m "加 CI 构建" && git push
 ```
 
-（放在 `build/` 而不是直接就位，是因为创建 workflow 需要 token 的 `workflow`
-权限，当初协助提交的会话没有。）
+（本仓库已经装好了，`build/` 那份留作备份和给 fork 的人用。）
 
 装上之后先**手动触发一次**（Actions 页 → 构建扩展包 → Run workflow）验证能跑通，
 zip 会挂在这一次运行的产物里。确认没问题再发正式版：
@@ -421,7 +443,11 @@ git tag v0.1.0 && git push origin v0.1.0
 ```
 
 推 tag 会触发同一个 workflow，编完自动建 Release 并把 zip 传上去。
-emsdk 和 sherpa 的构建走 `actions/cache`，首次约 40 分钟，之后命中缓存几分钟就好。
+CI 只发 zip，不发 crx——签名私钥不该放在 CI 上，见上一节。
+
+**实测耗时**：GitHub 的 `ubuntu-latest`（4 核）冷缓存从零编完整条链路 **7 分 39 秒**
+（含下 emsdk 工具链 356 MB、编 wasm、跑全套测试）。emsdk 和 sherpa 的构建走
+`actions/cache`，命中后更快。本地机器慢一些，按 20–40 分钟准备。
 
 > 上架 Chrome 应用商店要注意：**MV3 禁止远程托管代码，wasm 也算**
 > （transformers.js 的官方示例就因此被驳回）。引擎必须内置，不能做成运行时下载。
