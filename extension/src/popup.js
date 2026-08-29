@@ -69,7 +69,6 @@ $('tabhist').onclick = () => selectTab('hist');
   try {
     stats = await chrome.runtime.sendMessage({ type: 'stats', tabId: tab.id }) || stats;
   } catch { /* SW 还没起来 */ }
-  $('c').textContent = stats.tab.n;
   paintWords();
 
   if (stats.tab.blind) {
@@ -79,14 +78,15 @@ $('tabhist').onclick = () => selectTab('hist');
        ('Chrome 解不了这个音频编码（' + String(stats.tab.blind).replace('codec:', '') + '）'));
   }
 
+  // 总开关的实际状态以页面上的内容脚本为准（可能刚被别处改过）；
+  // 连不上就退回 storage 里那份，下面几行会补上。
   try {
-    const s = await chrome.tabs.sendMessage(tab.id, { type: 'stats' });
-    $('t').textContent = s.tracks;
-    $('on').checked = s.enabled;
-  } catch { $('t').textContent = '–'; }
+    const live = await chrome.tabs.sendMessage(tab.id, { type: 'stats' });
+    $('on').checked = live.enabled;
+  } catch { /* 这个页面没有内容脚本，比如 chrome:// 页 */ }
 
   const cfg = await chrome.storage.local.get(
-    ['keywords', 'enabled', 'muteTail', 'showBanner', 'showBlind']);
+    ['keywords', 'enabled', 'muteTail', 'showBanner', 'showBlind', 'uiBg', 'uiOpacity']);
   $('kw').value = cfg.keywords ||
     await fetch(chrome.runtime.getURL('keywords.txt')).then(r => r.text());
   if (cfg.enabled === false) $('on').checked = false;
@@ -95,6 +95,7 @@ $('tabhist').onclick = () => selectTab('hist');
   paintBanner();
   // 默认关，见 content.js 里那段注释：图标角上的叹号已经在说这件事了
   $('blind').checked = cfg.showBlind === true;
+  paintSkin({ uiBg: cfg.uiBg, uiOpacity: cfg.uiOpacity });
   paint(cfg.muteTail ?? 0.3);
 })();
 
@@ -169,6 +170,33 @@ $('doreload').onclick = async () => {
 $('guide').onclick = () => {
   chrome.tabs.create({ url: chrome.runtime.getURL('src/welcome.html') });
   window.close();
+};
+
+// ── 外观 ────────────────────────────────────────────────────────────
+// 面板和页面上的提示条共用一套设置。这里改完立刻写进 storage，
+// 内容脚本监听着 onChanged，页面上的提示条会跟着变，不用刷新。
+const TH = window.WWTheme;
+
+function paintSkin(cfg) {
+  const p = TH.applyTo(document.documentElement, cfg);
+  const op = TH.clampOpacity(cfg && cfg.uiOpacity);
+  $('op').value = op;
+  $('opv').textContent = Math.round(op * 100) + '%';
+  $('bg').value = p.bg;
+}
+
+function saveSkin() {
+  const v = { uiBg: TH.normHex($('bg').value), uiOpacity: TH.clampOpacity($('op').value) };
+  paintSkin(v);
+  chrome.storage.local.set(v);
+}
+$('op').oninput = saveSkin;
+$('bg').oninput = saveSkin;
+
+$('skinreset').onclick = async () => {
+  // 删掉键而不是写回默认值：默认值以后要是调了，用户不用再点一次「恢复默认」
+  await chrome.storage.local.remove(['uiBg', 'uiOpacity']);
+  paintSkin({});
 };
 
 // 这条提示是固定的，写死在 popup.html 里：图标上那个 ! 跟勾选框无关，

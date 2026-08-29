@@ -114,7 +114,9 @@ extension/              Chrome MV3 扩展本体
     offscreen.html/js   ★ 检测宿主：扩展源，绕开页面 CSP，多标签页共用一个 wasm
     background.js       安装即开引导页；按需创建 offscreen；按标签页/按词记账与徽标
     popup.html/js       设置面板：本页/历史的按词统计、总开关、静音时长、
-                        两个提示开关、词表编辑
+                        两个提示开关、外观、词表编辑
+    theme.js            外观：背景色 + 透明度，文字色按亮度自动推。
+                        提示条和面板共用，所以它同时是内容脚本和扩展页脚本
     welcome.html/js     安装引导页（自动检测 / 拖拽装引擎 / 自检）
     text2token.js       中文 → 模型 token 序列（让用户能直接输中文加词）
     pinyin-data.js      上面那个的数据（20840 字 / 72KB），由 build/ 的脚本生成
@@ -176,7 +178,7 @@ build/                  辅助脚本
 
 | 键 | 存哪 | 活多久 | 内容 |
 |---|---|---|---|
-| `keywords` `enabled` `muteTail` `showBanner` `showBlind` | `storage.local` | 永久 | 用户设置，面板里能改 |
+| `keywords` `enabled` `muteTail` `showBanner` `showBlind` `uiBg` `uiOpacity` | `storage.local` | 永久 | 用户设置，面板里能改 |
 | `score` `threshold` `muteLead` | `storage.local` | 永久 | 全局灵敏度，**没有 UI**，只能从控制台设（默认 2.0 / 0.25 / 1.55）|
 | `statsAll` | `storage.local` | 永久 | 历史累计 `{words:{词:次数}, total, since}` |
 | `tabStats` | `storage.**session**` | 到浏览器关闭 | 按标签页 `{[tabId]:{n, words, blind}}` |
@@ -187,6 +189,10 @@ build/                  辅助脚本
 **统计不能只放在 service worker 的内存里。** MV3 的 SW 闲置约 30 秒就被回收，
 而徽标是浏览器状态、活得比它久——原来就出现过「徽标显示 5，再命中一次变回 1」。
 所以按标签页的账走 `storage.session`：SW 重启后能接着数，浏览器关掉才清。
+
+**「恢复默认」删键，不写默认值。** 外观那个按钮走的是
+`storage.local.remove(['uiBg','uiOpacity'])`。写回当前默认值的话，以后调整
+默认配色，那些点过「恢复默认」的用户会被永久钉在旧值上。
 
 **读设置的时机比想象中早。** `content.js` 里 `showBlind` 是在模块顶层单独读的，
 没有跟着 `bootWorker()`——因为「本页挡不住」的信号可能比检测器起得还早

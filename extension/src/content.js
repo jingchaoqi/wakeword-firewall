@@ -28,8 +28,15 @@ let showBanner = true;
 // 就是重复打扰——而 DRM 站（Netflix 等）每次进都会触发，很烦。想要页面提示
 // 的人去设置面板打开。注意这跟「静默失效」是两回事：徽标始终会变。
 let showBlind = false;
-const uiCfg = chrome.storage.local.get(['showBanner', 'showBlind'])
-  .then((c) => { showBanner = c.showBanner !== false; showBlind = c.showBlind === true; })
+let theme = null;                       // 外观设置，提示条建出来时套上去
+const uiCfg = chrome.storage.local.get(
+  ['showBanner', 'showBlind', 'uiBg', 'uiOpacity'])
+  .then((c) => {
+    showBanner = c.showBanner !== false;
+    showBlind = c.showBlind === true;
+    theme = { uiBg: c.uiBg, uiOpacity: c.uiOpacity };
+    if (bannerEl) self.WWTheme.applyTo(bannerEl, theme);
+  })
   .catch(() => {});
 const queue = [];
 const spansBySb = new Map();
@@ -128,6 +135,14 @@ chrome.storage.onChanged.addListener((ch, area) => {
   // showBanner / showBlind / enabled 跟检测器无关，没连上宿主时也要能改
   if (ch.showBanner) showBanner = ch.showBanner.newValue !== false;
   if (ch.showBlind) showBlind = ch.showBlind.newValue === true;
+  // 外观改了立刻生效，不用刷新——面板里拖滑块时能直接看到页面上的提示条在变
+  if (ch.uiBg || ch.uiOpacity) {
+    theme = {
+      uiBg: ch.uiBg ? ch.uiBg.newValue : (theme && theme.uiBg),
+      uiOpacity: ch.uiOpacity ? ch.uiOpacity.newValue : (theme && theme.uiOpacity),
+    };
+    if (bannerEl) self.WWTheme.applyTo(bannerEl, theme);
+  }
   if (ch.enabled) enabled = ch.enabled.newValue !== false;
   if (!port) return;
   if (ch.muteTail || ch.muteLead) {
@@ -214,6 +229,8 @@ function banner(text, withUndo) {
   if (!bannerEl) {
     bannerEl = document.createElement('div');
     bannerEl.className = 'ww-banner';
+    // 配置可能还没读回来；uiCfg 那边解析后会再套一次，css 里的兜底值撑住这段
+    if (theme) self.WWTheme.applyTo(bannerEl, theme);
     document.body.appendChild(bannerEl);
   }
   bannerEl.textContent = '';

@@ -45,6 +45,7 @@
       "world": "ISOLATED",
       "all_frames": true,
       "js": [
+        "src/theme.js",
         "src/content.js"
       ],
       "css": [

@@ -179,6 +179,7 @@ ms.addEventListener('sourceopen',async()=>{
       ? document.querySelector('#blind').parentElement.textContent.trim() : '',
     hints: [...document.querySelectorAll('.hint')].map(e => e.textContent.trim()),
     tabs: [...document.querySelectorAll('.tabs button')].map(e => e.textContent.trim()),
+    rows: document.querySelectorAll('.row').length,
     blindChecked: (document.querySelector('#blind') || {}).checked,
   }));
   push('设置面板打得开', !!pe.blindLabel);
@@ -188,7 +189,82 @@ ms.addEventListener('sourceopen',async()=>{
     pe.hints.some(h => /无论悬浮提示是否开启/.test(h) && /标记当前页不支持/.test(h)));
   push('说明里不再暗示关掉就没提示',
     !pe.hints.some(h => /默认不弹|不必每次都被页面打断/.test(h)));
-  push('两栏切换在', JSON.stringify(pe.tabs) === JSON.stringify(['本页', '历史累计']));
+  push('两栏标题是「本页屏蔽统计 / 历史屏蔽统计」',
+    JSON.stringify(pe.tabs) === JSON.stringify(['本页屏蔽统计', '历史屏蔽统计']));
+  push('去掉了「本页已屏蔽 / 监听中的音频轨」两行', pe.rows === 0);
+
+  // ── 6. 外观：改了要即时生效，且能一键恢复 ────────────────────────
+  const skin0 = await pop.evaluate(() => ({
+    op: document.getElementById('op').value,
+    bg: document.getElementById('bg').value,
+    rootBg: getComputedStyle(document.documentElement).getPropertyValue('--ww-bg').trim(),
+  }));
+  push('外观控件读到了默认值', skin0.bg === '#16181c' && Number(skin0.op) === 0.95);
+
+  // 选一个浅色背景，文字色该自动翻成深色
+  await pop.evaluate(() => {
+    const b = document.getElementById('bg');
+    b.value = '#ffffff'; b.dispatchEvent(new Event('input'));
+    const o = document.getElementById('op');
+    o.value = '0.5'; o.dispatchEvent(new Event('input'));
+  });
+  await pop.waitForTimeout(400);
+  const skin1 = await pop.evaluate(() => {
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      bg: cs.getPropertyValue('--ww-bg').trim(),
+      fg: cs.getPropertyValue('--ww-fg').trim(),
+      op: cs.getPropertyValue('--ww-op').trim(),
+      label: document.getElementById('opv').textContent,
+    };
+  });
+  push('换背景色即时生效', skin1.bg === '#ffffff');
+  push('浅底自动换成深色文字（不会调出看不清的配色）', skin1.fg === '#1a1c20');
+  push('透明度即时生效', skin1.op === '0.5' && skin1.label === '50%');
+
+  const persisted = await ext.evaluate(async () =>
+    await chrome.storage.local.get(['uiBg', 'uiOpacity']));
+  push('外观设置存下来了', persisted.uiBg === '#ffffff' && persisted.uiOpacity === 0.5);
+
+  await pop.click('#skinreset');
+  await pop.waitForTimeout(400);
+  const skin2 = await pop.evaluate(() => ({
+    bg: getComputedStyle(document.documentElement).getPropertyValue('--ww-bg').trim(),
+    op: document.getElementById('op').value,
+  }));
+  push('一键恢复默认', skin2.bg === '#16181c' && Number(skin2.op) === 0.95);
+  const cleared = await ext.evaluate(async () =>
+    Object.keys(await chrome.storage.local.get(['uiBg', 'uiOpacity'])).length);
+  push('恢复默认是删键而不是写死值', cleared === 0);
+
+  // ── 7. 外观要真的传到页面上那条提示条 ────────────────────────────
+  // 面板里改完就该生效，不用刷新页面——这才是这个功能的用处所在。
+  // 只验面板自己会变的话，等于没验。
+  await ext.evaluate(async () =>
+    chrome.storage.local.set({ uiBg: '#ffffff', uiOpacity: 0.6, showBlind: true }));
+  const drm3 = await ctx.newPage();
+  await drm3.goto('http://127.0.0.1:8848/drm.html');
+  await drm3.waitForFunction(() => window.__drmDone === true, null, { timeout: 15000 }).catch(() => {});
+  await drm3.waitForTimeout(2500);
+  const bn = await drm3.evaluate(() => {
+    const el = document.querySelector('.ww-banner');
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    return { bg: cs.backgroundColor, color: cs.color, opacity: cs.opacity };
+  });
+  push('提示条用上了用户选的背景色', !!bn && bn.bg === 'rgb(255, 255, 255)');
+  push('提示条文字跟着翻成深色', !!bn && bn.color === 'rgb(26, 28, 32)');
+  push('提示条用上了用户设的透明度', !!bn && Math.abs(Number(bn.opacity) - 0.6) < 0.01);
+  if (bn) await drm3.screenshot({ path: '/tmp/ww-banner-custom.png' });
+
+  // 改回默认，确认也是即时的（内容脚本监听 onChanged，不是只在启动时读一次）
+  await ext.evaluate(async () => chrome.storage.local.remove(['uiBg', 'uiOpacity']));
+  await drm3.waitForTimeout(800);
+  const bn2 = await drm3.evaluate(() => {
+    const el = document.querySelector('.ww-banner');
+    return el ? getComputedStyle(el).backgroundColor : null;
+  });
+  push('恢复默认后提示条不用刷新就变回去', bn2 === 'rgb(22, 24, 28)');
 
   console.log('\n============ 统计与徽标 ============');
   for (const [n, ok] of checks) console.log(`  ${ok ? '✅' : '❌'}  ${n}`);

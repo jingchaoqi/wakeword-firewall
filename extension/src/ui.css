@@ -1,15 +1,20 @@
+/* 悬浮提示条。颜色走 CSS 变量，由 theme.js 按用户设置写在元素上；
+   变量缺失时的兜底值就是默认外观，所以即使配置读失败也不会变成裸样式。 */
 .ww-banner{
   position:fixed; left:50%; bottom:28px; transform:translate(-50%,16px);
   z-index:2147483647; display:flex; align-items:center; gap:12px;
   padding:10px 16px; border-radius:6px; pointer-events:auto;
-  background:rgba(20,22,26,.94); color:#E9E7E2; border:1px solid rgba(255,255,255,.12);
+  background:var(--ww-bg,#16181C); color:var(--ww-fg,#E9E7E2);
+  border:1px solid var(--ww-line,rgba(255,255,255,.14));
   font:500 13px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
   box-shadow:0 8px 32px rgba(0,0,0,.4);
+  /* opacity 这个属性被淡入动画占着，用户设的整体透明度只能加在 .ww-show 上 */
   opacity:0; transition:opacity .18s ease, transform .18s ease;
 }
-.ww-banner.ww-show{opacity:1; transform:translate(-50%,0)}
+.ww-banner.ww-show{opacity:var(--ww-op,.95); transform:translate(-50%,0)}
 .ww-banner button{
   all:unset; cursor:pointer; padding:3px 10px; border-radius:4px;
-  background:rgba(255,255,255,.12); color:#5CBDB5; font-size:12px; font-weight:600;
+  background:var(--ww-btn,rgba(255,255,255,.12));
+  color:var(--ww-accent,#5CBDB5); font-size:12px; font-weight:600;
 }
-.ww-banner button:hover{background:rgba(255,255,255,.2)}
+.ww-banner button:hover{background:var(--ww-btn-hover,rgba(255,255,255,.2))}
