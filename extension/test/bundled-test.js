@@ -61,6 +61,16 @@ const { requireChrome } = require('./util.js');
     const desc = await w.textContent('#s2 p').catch(() => '');
     checks.push(['第 2 步说明不再谎称测「小爱同学」', !/小爱同学/.test(desc)]);
     checks.push(['第 2 步说明写明不用麦克风', /不用麦克风/.test(desc)]);
+
+    const lede = await w.textContent('.lede').catch(() => '');
+    checks.push(['开场是产品价值而不是操作说明',
+      /智能音箱不再被评测视频意外唤醒/.test(lede) && !/自动完成/.test(lede)]);
+    const s3 = await w.textContent('#s3').catch(() => '');
+    checks.push(['第 3 步不再说「页面上会有提示」（默认已不弹）',
+      !/页面上会有提示/.test(s3) && /图标角上会出现/.test(s3)]);
+    const gh = await w.$eval('.foot a', el => el.href).catch(() => '');
+    checks.push(['引导页底部有 GitHub 链接',
+      gh === 'https://github.com/jingchaoqi/wakeword-firewall']);
   }
 
   console.log('');

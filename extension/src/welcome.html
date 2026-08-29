@@ -17,6 +17,10 @@ body{margin:0;background:var(--paper);color:var(--ink2);
 .wrap{max-width:720px;margin:0 auto;padding:48px 24px 80px}
 h1{font-size:26px;color:var(--ink);margin:0 0 6px;letter-spacing:-.01em}
 .lede{color:var(--dim);margin:0 0 32px}
+.foot{margin:36px 0 0;padding-top:18px;border-top:1px solid var(--line);
+      font-size:13px}
+.foot a{color:var(--sig);text-decoration:none}
+.foot a:hover{text-decoration:underline}
 .step{background:var(--surface);border:1px solid var(--line);border-radius:6px;
   padding:20px 22px;margin:0 0 16px;position:relative}
 .step.done{border-color:var(--sig)}
@@ -57,7 +61,7 @@ summary{cursor:pointer;color:var(--dim);font-size:13px}
 
 <div class="wrap">
 <h1>唤醒词防火墙</h1>
-<p class="lede">还差一步就能用。下面每一步能自动完成的都会自动完成。</p>
+<p class="lede">让家里的智能音箱不再被评测视频意外唤醒，仅需一键运行自检。</p>
 
 <div class="step" id="s1">
   <h2><span class="badge">1</span>检测引擎</h2>
@@ -116,8 +120,12 @@ cd ../../.. &amp;&amp; ./build-wasm-simd-kws.sh
   <p class="muted">装好后打开任意视频页即可自动生效。点浏览器工具栏的图标可以调
     <b>静音时长</b>和<b>唤醒词表</b>。</p>
   <p class="muted">挡不住的情况已知有：DRM 内容（音频是密文）、杜比音轨（Chrome 无解码器）、
-    WebRTC 直播（无前瞻缓冲）。遇到时页面上会有提示，不会静默失效。</p>
+    WebRTC 直播（无前瞻缓冲）。遇到时工具栏图标角上会出现 <b>!</b> 标记。</p>
 </div>
+
+<p class="foot">
+  <a href="https://github.com/jingchaoqi/wakeword-firewall" target="_blank" rel="noopener">项目主页与源码 · GitHub</a>
+</p>
 </div>
 
 <script src="engine-store.js"></script>

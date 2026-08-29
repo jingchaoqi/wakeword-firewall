@@ -180,6 +180,20 @@ ms.addEventListener('sourceopen',async()=>{
     hints: [...document.querySelectorAll('.hint')].map(e => e.textContent.trim()),
     tabs: [...document.querySelectorAll('.tabs button')].map(e => e.textContent.trim()),
     rows: document.querySelectorAll('.row').length,
+    noVal: !document.getElementById('opv'),
+    // 「外观」标题之后、「唤醒词表」标题之前，不该再有 .hint
+    skinHints: (() => {
+      const hs = [...document.querySelectorAll('h2')];
+      const a = hs.find(h => h.textContent.includes('外观'));
+      const b = hs.find(h => h.textContent.includes('唤醒词表'));
+      if (!a || !b) return -1;
+      let n = 0;
+      for (let el = a.nextElementSibling; el && el !== b; el = el.nextElementSibling)
+        if (el.classList.contains('hint')) n++;
+      return n;
+    })(),
+    sub: (document.querySelector('.sub') || {}).textContent || '',
+    gh: (document.querySelector('.foot a[href]') || {}).href || '',
     blindChecked: (document.querySelector('#blind') || {}).checked,
   }));
   push('设置面板打得开', !!pe.blindLabel);
@@ -189,6 +203,9 @@ ms.addEventListener('sourceopen',async()=>{
     pe.hints.some(h => /无论悬浮提示是否开启/.test(h) && /标记当前页不支持/.test(h)));
   push('说明里不再暗示关掉就没提示',
     !pe.hints.some(h => /默认不弹|不必每次都被页面打断/.test(h)));
+  push('顶部有产品标语', /让家里的智能音箱不再被评测视频意外唤醒/.test(pe.sub));
+  push('标语保留了「不发一个网络请求」', /不发一个网络请求/.test(pe.sub));
+  push('面板底部有 GitHub 链接', pe.gh === 'https://github.com/jingchaoqi/wakeword-firewall');
   push('两栏标题是「本页屏蔽统计 / 历史屏蔽统计」',
     JSON.stringify(pe.tabs) === JSON.stringify(['本页屏蔽统计', '历史屏蔽统计']));
   push('去掉了「本页已屏蔽 / 监听中的音频轨」两行', pe.rows === 0);
@@ -198,7 +215,9 @@ ms.addEventListener('sourceopen',async()=>{
     const cs = getComputedStyle(document.documentElement);
     return {
       idx: document.getElementById('op').value,
-      label: document.getElementById('opv').textContent.trim(),
+      // 「当前是哪档」现在只由滑杆下方高亮的那个档位名表示
+      label: (document.querySelector('.ticks span.on') || {}).textContent || '',
+      tickOn: [...document.querySelectorAll('.ticks span')].map(e => e.classList.contains('on')),
       accentInput: document.getElementById('bg').value,
       panel: cs.getPropertyValue('--ww-panel').trim(),
       fg: cs.getPropertyValue('--ww-fg').trim(),
@@ -208,9 +227,12 @@ ms.addEventListener('sourceopen',async()=>{
   });
 
   const skin0 = await readSkin();
-  push('默认是玄墨档', skin0.label === '玄墨' && skin0.idx === '2');
+  push('默认是月白档', skin0.label === '月白' && skin0.idx === '0');
   push('默认强调色是青绿', skin0.accentInput === '#5cbdb5');
   push('三档的名字都在', JSON.stringify(skin0.ticks) === JSON.stringify(['月白', '烟霭', '玄墨']));
+  push('只有选中那档被高亮', skin0.tickOn.filter(Boolean).length === 1 && skin0.tickOn[0]);
+  push('不再单独显示「当前档位」', pe.noVal);
+  push('外观那节没有多余说明文字', pe.skinHints === 0);
   push('底色是纯色，不再是半透明', /^#|^rgb\(/.test(skin0.panel) && !/rgba/.test(skin0.panel));
 
   // 逐档切过去，每档都要保证文字读得出来
@@ -259,7 +281,7 @@ ms.addEventListener('sourceopen',async()=>{
   await pop.click('#skinreset');
   await pop.waitForTimeout(400);
   const skin2 = await readSkin();
-  push('一键恢复默认', skin2.accentInput === '#5cbdb5' && skin2.label === '玄墨');
+  push('一键恢复默认', skin2.accentInput === '#5cbdb5' && skin2.label === '月白');
   const cleared = await ext.evaluate(async () =>
     Object.keys(await chrome.storage.local.get(['uiAccent', 'uiTheme'])).length);
   push('恢复默认是删键而不是写死值', cleared === 0);
@@ -270,7 +292,7 @@ ms.addEventListener('sourceopen',async()=>{
   // 面板里改完就该生效，不用刷新页面——这才是这个功能的用处所在。
   // 只验面板自己会变的话，等于没验。
   await ext.evaluate(async () =>
-    chrome.storage.local.set({ uiAccent: '#e06c9f', uiTheme: 'cream', showBlind: true }));
+    chrome.storage.local.set({ uiAccent: '#e06c9f', uiTheme: 'ink', showBlind: true }));
   const drm3 = await ctx.newPage();
   await drm3.goto('http://127.0.0.1:8848/drm.html');
   await drm3.waitForFunction(() => window.__drmDone === true, null, { timeout: 15000 }).catch(() => {});
@@ -282,8 +304,8 @@ ms.addEventListener('sourceopen',async()=>{
     return { bg: cs.backgroundColor, color: cs.color, opacity: cs.opacity };
   });
   // 提示条要跟着主题走，而且文字得跟着翻——米白底配白字就是这个功能的失败态
-  push('提示条用上了选中的主题底色', !!bn && bn.bg === 'rgb(245, 241, 232)');
-  push('米白主题下提示条文字是深色', !!bn && bn.color === 'rgb(42, 38, 30)');
+  push('提示条用上了选中的主题底色（切到玄墨）', !!bn && bn.bg === 'rgb(22, 24, 28)');
+  push('玄墨主题下提示条文字是浅色', !!bn && bn.color === 'rgb(233, 231, 226)');
   if (bn) await drm3.screenshot({ path: '/tmp/ww-banner-custom.png' });
 
   // 改回默认，确认也是即时的（内容脚本监听 onChanged，不是只在启动时读一次）
@@ -293,7 +315,7 @@ ms.addEventListener('sourceopen',async()=>{
     const el = document.querySelector('.ww-banner');
     return el ? getComputedStyle(el).backgroundColor : null;
   });
-  push('恢复默认后提示条不用刷新就变回去', bn2 === 'rgb(22, 24, 28)');
+  push('恢复默认后提示条不用刷新就变回去', bn2 === 'rgb(245, 241, 232)');
 
   console.log('\n============ 统计与徽标 ============');
   for (const [n, ok] of checks) console.log(`  ${ok ? '✅' : '❌'}  ${n}`);

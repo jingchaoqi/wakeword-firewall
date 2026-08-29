@@ -179,8 +179,10 @@ const TH = window.WWTheme;
 
 function paintSkin(cfg) {
   const p = TH.applyTo(document.documentElement, cfg);
-  $('op').value = String(TH.ORDER.indexOf(p.key));
-  $('opv').textContent = p.name;
+  const i = TH.ORDER.indexOf(p.key);
+  $('op').value = String(i);
+  // 选中的那一档直接在滑杆下方高亮，不再单独占一行显示「当前是哪档」
+  [...$('ticks').children].forEach((el, k) => el.classList.toggle('on', k === i));
   $('bg').value = TH.normHex(cfg && cfg.uiAccent);
 }
 

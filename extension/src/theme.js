@@ -39,9 +39,8 @@
     },
   };
 
-  // 滑杆从明到暗，默认停在最暗那档
-  const ORDER = ['cream', 'mist', 'ink'];
-  const DEFAULTS = { uiTheme: 'ink', uiAccent: '#5cbdb5' };
+  const ORDER = ['cream', 'mist', 'ink'];      // 滑杆从明到暗
+  const DEFAULTS = { uiTheme: 'cream', uiAccent: '#5cbdb5' };
 
   function normTheme(v) {
     return THEMES[v] ? v : DEFAULTS.uiTheme;
