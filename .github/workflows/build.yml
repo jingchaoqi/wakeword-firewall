@@ -1,0 +1,86 @@
+
+name: 构建扩展包
+
+# 为什么要有这个：仓库不带那 25MB 的 wasm 引擎（官方没发布 KWS 的浏览器版，
+# 必须自己编），本地编一次要 20–40 分钟。让 CI 编，用户直接下 Release 里的 zip。
+on:
+  push:
+    tags: ['v*']            # 打 tag 就发 Release
+  workflow_dispatch:        # 也可以手动点一次，产物挂在 Actions 里
+  pull_request:
+    paths:                  # 只有动到构建链才在 PR 上跑，别浪费 40 分钟
+      - 'extension/vendor/build-wasm.sh'
+      - 'extension/tools/**'
+      - 'build/**'
+      - '.github/workflows/build.yml'
+
+# 默认的 GITHUB_TOKEN 从 2023 年起是只读的，不写这段，打 tag 时
+# softprops/action-gh-release 会以 403 收场——前面 40 分钟全白编。
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90     # 冷缓存时编译本身约 20–40 分钟，留足余量
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 装系统依赖
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build zip
+
+      # 编译产物缓存：命中的话整个第 1 步跳过，几分钟就能出包。
+      # key 里放 build-wasm.sh 的哈希——脚本改了（换 emsdk 版本、换模型）就重编。
+      - name: 缓存 emsdk 与 sherpa 构建
+        id: cache-build
+        uses: actions/cache@v4
+        with:
+          path: ~/ww-build
+          key: ww-build-${{ runner.os }}-${{ hashFiles('extension/vendor/build-wasm.sh') }}
+
+      - name: 编引擎 / 取模型 / 打包
+        run: |
+          chmod +x extension/tools/*.sh extension/vendor/*.sh
+          ./extension/tools/build-all.sh
+
+      # 全套测试。e2e 那条是唯一能证明"包装上去真的会静音"的检查，
+      # 所以它必须能挂。之前它写着 continue-on-error，而测试里的 Chrome 路径
+      # 又是写死的开发容器路径——等于在 CI 上必挂且永远不报。一起修掉了。
+      - name: 跑测试（单测 + 端到端 + 引导页）
+        working-directory: extension
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+          npm test
+
+      - name: 记录产物信息
+        run: |
+          ls -lh dist/
+          echo "--- 包里有没有引擎 ---"
+          unzip -l dist/*.zip | grep -E 'sherpa-onnx-wasm\.wasm' \
+            || { echo "!! 引擎不在包里"; exit 1; }
+          unzip -l dist/*.zip | grep -E 'assets/selftest\.wav' \
+            || { echo "!! 自检素材不在包里"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wakeword-firewall
+          path: dist/*.zip
+          retention-days: 30
+
+      - name: 打了 tag 就发 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          body: |
+            解压后在 `chrome://extensions` 开启开发者模式，点「加载已解压的扩展程序」，
+            选解压出来的目录即可。**引擎已内置，不用自己编。**
+
+            装完会自动弹引导页，跟着走完自检就能用。
+            已知边界（DRM 内容、杜比音轨、移动端等）见 README。
