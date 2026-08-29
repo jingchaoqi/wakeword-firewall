@@ -495,5 +495,6 @@ MediaSource.canConstructInDedicatedWorker   // 仅能力探测，true 不代表�
 
 ## 许可
 
-Apache-2.0，全文见 [LICENSE](LICENSE)。第三方组件的来源与许可见 [NOTICE](NOTICE)，
-发布包里也带着这两个文件。
+本项目采用 Apache License 2.0，许可全文见 [LICENSE](LICENSE)。
+
+所含第三方组件的来源与各自的许可条款载于 [NOTICE](NOTICE)。二者均随发布包一同分发。
