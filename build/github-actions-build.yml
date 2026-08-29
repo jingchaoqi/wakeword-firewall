@@ -61,7 +61,9 @@ jobs:
         run: |
           V=$(python3 -c "import json;print(json.load(open('extension/manifest.json'))['version'])")
           echo "v=$V" >> "$GITHUB_OUTPUT"
-          echo "manifest 版本：$V"
+          # Actions 没有内置的短 sha 变量，自己截。40 位全长挂在产物名上太难认
+          echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "manifest 版本：$V   commit：${GITHUB_SHA::7}"
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             T="${GITHUB_REF_NAME#v}"
             if [ "$T" != "$V" ]; then
@@ -118,7 +120,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wakeword-firewall-${{ steps.ver.outputs.v }}-${{ github.sha }}
+          name: wakeword-firewall-${{ steps.ver.outputs.v }}-${{ steps.ver.outputs.sha }}
           path: dist/unpacked
           retention-days: 30
 
