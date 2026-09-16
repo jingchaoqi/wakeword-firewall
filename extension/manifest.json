@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "唤醒词防火墙",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "屏蔽网页视频里的「小爱同学」等唤醒词，别让视频唤醒你身边的设备。全程本地推理，零网络请求。",
   "permissions": [
     "storage",

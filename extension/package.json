@@ -1,7 +1,7 @@
 {
   "name": "wakeword-firewall-tests",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "测试用的依赖清单。扩展本身不需要 npm，装扩展也不需要——只有跑测试要。",
   "scripts": {
     "test": "npm run test:unit && npm run test:e2e && npm run test:ui",

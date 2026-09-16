@@ -29,6 +29,25 @@ const eq = (a, b, what) => {
   else { fail++; console.log(`  ❌ ${what}\n       实际 ${JSON.stringify(a)}\n       期望 ${JSON.stringify(b)}`); }
 };
 
+// 版本号也有两份：manifest.json（决定发布包文件名、CI 会拿它跟 tag 对）
+// 和 package.json（跑测试用）。CI 只校验前者，后者悄悄落后不会有人发现。
+console.log('\n▸ 两处版本号是否一致');
+{
+  const mf = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../manifest.json'), 'utf8'));
+  const pk = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8'));
+  eq(pk.version, mf.version, 'package.json 与 manifest.json 的 version 一致');
+}
+
+// 词表有两份副本：扩展一份、p0/ 那套离线工具一份。它们已经漂移过一次——
+// 变体词加进扩展时漏了 p0，于是 CONTRIBUTING 让贡献者用 p0/scan.py 测的
+// 误报率，测的根本不是扩展实际发布的词表。两份必须一模一样。
+console.log('\n▸ 扩展与 p0 的词表是否同一份');
+{
+  const a = fs.readFileSync(path.resolve(__dirname, '../keywords.txt'), 'utf8');
+  const b = fs.readFileSync(path.resolve(__dirname, '../../p0/keywords.txt'), 'utf8');
+  eq(b, a, 'p0/keywords.txt 与 extension/keywords.txt 逐字节一致');
+}
+
 console.log('\n▸ 对着 keywords.txt 的官方结果逐条比对');
 const kw = fs.readFileSync(path.resolve(__dirname, '../keywords.txt'), 'utf8');
 let checked = 0;
